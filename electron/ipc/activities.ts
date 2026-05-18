@@ -1,7 +1,42 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { getMainWindow } from "../app-shell";
-import { insertActivity } from "../db";
-import type { ActivityInput, ActivityPromptInput, ActivityRecord } from "../types";
+import {
+  insertActivity,
+  listActivityMedia,
+  listRecentActivitySessions,
+  listRecentUnsyncedActivities,
+} from "../db";
+import { captureScreenshot } from "../tracker/screenshots";
+import type {
+  ActivityInput,
+  ActivityMediaFilter,
+  ActivityPromptInput,
+  ActivityRecord,
+} from "../types";
+
+async function createActivity(input: ActivityInput) {
+  const description = input.description.trim();
+
+  if (!input.project) {
+    throw new Error("Please select a project first.");
+  }
+
+  if (!description) {
+    throw new Error("Activity description is required.");
+  }
+
+  const screenshotPaths =
+    input.screenshotPaths === undefined
+      ? await captureScreenshot()
+      : input.screenshotPaths;
+
+  return insertActivity({
+    ...input,
+    description,
+    screenshotPaths,
+    camshotPaths: input.camshotPaths || [],
+  });
+}
 
 function escapeHtml(value: string) {
   return value
@@ -168,13 +203,18 @@ function openActivityPrompt(input: ActivityPromptInput) {
       cleanup();
 
       try {
-        const record = insertActivity({
+        createActivity({
           ...input,
           description: payload.description,
-        });
-
-        resolve(record);
-        closeWindow();
+        })
+          .then((record) => {
+            resolve(record);
+            closeWindow();
+          })
+          .catch((error) => {
+            reject(error);
+            closeWindow();
+          });
       } catch (error) {
         reject(error);
         closeWindow();
@@ -200,23 +240,103 @@ function openActivityPrompt(input: ActivityPromptInput) {
   });
 }
 
+function openActivityDescriptionPrompt(input: ActivityPromptInput) {
+  return new Promise<string | null>((resolve) => {
+    const promptId = `activity-description-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    const parent = getMainWindow() || undefined;
+    const promptWindow = new BrowserWindow({
+      width: 420,
+      height: 220,
+      parent,
+      modal: Boolean(parent),
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      title: input.title,
+      backgroundColor: "#f4f4f4",
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+      },
+    });
+    let settled = false;
+
+    function cleanup() {
+      ipcMain.removeListener("activity-prompt:submit", handleSubmit);
+      ipcMain.removeListener("activity-prompt:cancel", handleCancel);
+    }
+
+    function closeWindow() {
+      if (!promptWindow.isDestroyed()) {
+        promptWindow.close();
+      }
+    }
+
+    function handleCancel(_: Electron.IpcMainEvent, payload: { promptId: string }) {
+      if (payload.promptId !== promptId || settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve(null);
+      closeWindow();
+    }
+
+    function handleSubmit(
+      _: Electron.IpcMainEvent,
+      payload: { promptId: string; description: string },
+    ) {
+      if (payload.promptId !== promptId || settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve(payload.description.trim());
+      closeWindow();
+    }
+
+    ipcMain.on("activity-prompt:submit", handleSubmit);
+    ipcMain.on("activity-prompt:cancel", handleCancel);
+
+    promptWindow.on("closed", () => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    });
+
+    promptWindow.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(
+        buildPromptHtml(promptId, input),
+      )}`,
+    );
+  });
+}
+
 export function registerActivityHandlers() {
   ipcMain.handle("activities:create", async (_, input: ActivityInput) => {
-    const description = input.description.trim();
-
-    if (!input.project) {
-      throw new Error("Please select a project first.");
-    }
-
-    if (!description) {
-      throw new Error("Activity description is required.");
-    }
-
-    return insertActivity({
-      ...input,
-      description,
-    });
+    return createActivity(input);
   });
+
+  ipcMain.handle("activities:list-recent-unsynced", async (_, limit?: number) => {
+    return listRecentUnsyncedActivities(limit);
+  });
+
+  ipcMain.handle("activities:list-recent-sessions", async (_, limit?: number) => {
+    return listRecentActivitySessions(limit);
+  });
+
+  ipcMain.handle(
+    "activities:list-media",
+    async (_, filter?: ActivityMediaFilter, limit?: number) => {
+      return listActivityMedia(filter, limit);
+    },
+  );
 
   ipcMain.handle("activities:prompt", async (_, input: ActivityPromptInput) => {
     if (!input.project) {
@@ -225,4 +345,15 @@ export function registerActivityHandlers() {
 
     return openActivityPrompt(input);
   });
+
+  ipcMain.handle(
+    "activities:prompt-description",
+    async (_, input: ActivityPromptInput) => {
+      if (!input.project) {
+        throw new Error("Please select a project first.");
+      }
+
+      return openActivityDescriptionPrompt(input);
+    },
+  );
 }

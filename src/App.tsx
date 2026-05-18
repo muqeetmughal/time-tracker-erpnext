@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import ConfigurationWindow from "./ConfigurationWindow";
 
 function formatDuration(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
@@ -10,8 +11,36 @@ function formatDuration(totalSeconds: number) {
     .join(":");
 }
 
+function formatMediaFileUrl(filePath: string) {
+  const normalizedPath = filePath.replace(/\\/g, "/");
+
+  return `file://${normalizedPath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function getMediaStatusClass(status: ActivityMediaUploadStatus) {
+  if (status === "uploaded") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "failed") {
+    return "bg-red-50 text-red-600";
+  }
+
+  if (status === "uploading") {
+    return "bg-blue-50 text-blue-700";
+  }
+
+  return "bg-amber-50 text-amber-700";
+}
+
 export default function App() {
-  const [currentView, setCurrentView] = useState("projects"); // 'projects' or 'manual'
+  if (new URLSearchParams(window.location.search).get("window") === "config") {
+    return <ConfigurationWindow />;
+  }
+
+  const [currentView, setCurrentView] = useState<
+    "projects" | "manual" | "activities" | "media"
+  >("projects");
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [connectedSiteUrl, setConnectedSiteUrl] = useState("");
@@ -23,6 +52,17 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [recentActivities, setRecentActivities] = useState<ActivityRecord[]>([]);
+  const [recentSessions, setRecentSessions] = useState<
+    ActivitySessionSummaryRecord[]
+  >([]);
+  const [activityMedia, setActivityMedia] = useState<ActivityMediaRecord[]>([]);
+  const [mediaFilter, setMediaFilter] =
+    useState<ActivityMediaFilter>("screenshot");
+  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
+  const [isLoadingMedia, setIsLoadingMedia] = useState(false);
+  const [activitiesError, setActivitiesError] = useState("");
+  const [mediaError, setMediaError] = useState("");
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState("");
   const [isTracking, setIsTracking] = useState(false);
@@ -30,6 +70,7 @@ export default function App() {
   const [startedAt, setStartedAt] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [popupFrequencyMinutes, setPopupFrequencyMinutes] = useState(30);
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const isActivityPromptOpenRef = useRef(false);
 
   useEffect(() => {
@@ -107,6 +148,22 @@ export default function App() {
   }, [isLoggedIn]);
 
   useEffect(() => {
+    if (!isLoggedIn || currentView !== "activities") {
+      return;
+    }
+
+    refreshRecentActivities();
+  }, [currentView, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn || currentView !== "media") {
+      return;
+    }
+
+    refreshActivityMedia();
+  }, [currentView, isLoggedIn, mediaFilter]);
+
+  useEffect(() => {
     if (!isLoggedIn) {
       return;
     }
@@ -115,9 +172,11 @@ export default function App() {
 
     async function fetchSettings() {
       try {
+        const loadedConfig = await window.api.config.get();
         const settings = await window.api.settings.get();
 
         if (isMounted) {
+          setConfig(loadedConfig);
           setPopupFrequencyMinutes(settings.popup_frequency_minutes);
         }
       } catch (error) {
@@ -131,6 +190,15 @@ export default function App() {
       isMounted = false;
     };
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    return window.api.config.onUpdated((updatedConfig) => {
+      setConfig(updatedConfig);
+      setPopupFrequencyMinutes(
+        updatedConfig.general.activityUpdateIntervalMinutes || 0,
+      );
+    });
+  }, []);
 
   useEffect(() => {
     if (!isTracking || popupFrequencyMinutes <= 0) {
@@ -234,12 +302,49 @@ export default function App() {
     setConnectedSiteUrl("");
     setLoggedUser("");
     setProjects([]);
+    setRecentActivities([]);
+    setRecentSessions([]);
+    setActivityMedia([]);
     setSelectedProject("");
     setProjectsError("");
     setIsTracking(false);
     setSessionId("");
     setStartedAt("");
     setElapsedSeconds(0);
+  }
+
+  async function refreshRecentActivities() {
+    try {
+      setIsLoadingActivities(true);
+      setActivitiesError("");
+      const [sessions, activities] = await Promise.all([
+        window.api.activities.listRecentSessions(50),
+        window.api.activities.listRecentUnsynced(50),
+      ]);
+
+      setRecentSessions(sessions);
+      setRecentActivities(activities);
+    } catch (error) {
+      setActivitiesError(
+        error instanceof Error ? error.message : "Could not load activities.",
+      );
+    } finally {
+      setIsLoadingActivities(false);
+    }
+  }
+
+  async function refreshActivityMedia() {
+    try {
+      setIsLoadingMedia(true);
+      setMediaError("");
+      setActivityMedia(await window.api.activities.listMedia(mediaFilter, 100));
+    } catch (error) {
+      setMediaError(
+        error instanceof Error ? error.message : "Could not load screenshots.",
+      );
+    } finally {
+      setIsLoadingMedia(false);
+    }
   }
 
   function getSelectedProjectLabel() {
@@ -255,6 +360,15 @@ export default function App() {
       return null;
     }
 
+    const shouldAsk =
+      type === "start"
+        ? config?.advanced.askActivityDescriptionOnTrackingStart !== false
+        : config?.advanced.askActivityDescriptionOnTrackingStop !== false;
+
+    if (!shouldAsk) {
+      return type === "start" ? "Started tracking" : "Completed tracking";
+    }
+
     if (isActivityPromptOpenRef.current) {
       return null;
     }
@@ -262,7 +376,7 @@ export default function App() {
     try {
       isActivityPromptOpenRef.current = true;
 
-      return await window.api.activities.prompt({
+      return await window.api.activities.promptDescription({
         project: selectedProject,
         projectLabel: getSelectedProjectLabel(),
         type,
@@ -285,24 +399,26 @@ export default function App() {
 
     try {
       if (!isTracking) {
-        const activity = await promptForActivity("start");
+        const description = await promptForActivity("start");
 
-        if (!activity) {
+        if (!description) {
           return;
         }
 
         const trackerResponse = await window.api.tracker.start({
           project: selectedProject,
-          description: activity.description,
+          description,
         });
 
         setSessionId(trackerResponse.sessionId);
         setStartedAt(trackerResponse.startedAt);
         setIsTracking(true);
+        setCurrentView("activities");
+        refreshRecentActivities();
       } else {
-        const activity = await promptForActivity("stop");
+        const description = await promptForActivity("stop");
 
-        if (!activity) {
+        if (!description) {
           return;
         }
 
@@ -311,6 +427,8 @@ export default function App() {
         setSessionId("");
         setStartedAt("");
         setElapsedSeconds(0);
+        setCurrentView("activities");
+        refreshRecentActivities();
       }
     } catch (error) {
       setProjectsError(
@@ -321,7 +439,7 @@ export default function App() {
 
   if (isCheckingAuth) {
     return (
-      <div className="flex h-[700px] w-[550px] items-center justify-center font-sans border border-gray-300 rounded-lg overflow-hidden bg-[#f4f4f4] text-gray-500 shadow-2xl select-none">
+      <div className="flex h-[700px] w-[550px] items-center justify-center overflow-hidden rounded-[28px] border border-stone-200 bg-[#f8f4ea] font-sans text-stone-500 shadow-2xl select-none">
         Checking login...
       </div>
     );
@@ -329,14 +447,19 @@ export default function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="flex h-[700px] w-[550px] items-center justify-center font-sans border border-gray-300 rounded-lg overflow-hidden bg-[#f4f4f4] text-[#555555] shadow-2xl select-none p-6">
+      <div className="flex h-[700px] w-[550px] items-center justify-center overflow-hidden rounded-[28px] border border-stone-200 bg-[#f8f4ea] p-6 font-sans text-stone-700 shadow-2xl select-none">
         <form
           onSubmit={handleLogin}
-          className="w-full bg-white border border-gray-200 rounded p-5 shadow-sm"
+          className="w-full rounded-[24px] border border-stone-200 bg-white/90 p-6 shadow-[0_18px_60px_rgba(68,64,60,0.18)]"
         >
           <div className="mb-5">
-            <h1 className="text-xl font-normal text-gray-700">Login</h1>
-            <p className="text-xs text-gray-400">
+            <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#243c35] text-lg font-semibold text-[#f6d97a]">
+              ET
+            </div>
+            <h1 className="text-2xl font-semibold text-stone-900">
+              Connect workspace
+            </h1>
+            <p className="text-xs text-stone-500">
               Connect your ERPNext site with API credentials
             </p>
           </div>
@@ -351,7 +474,7 @@ export default function App() {
                 value={siteUrl}
                 onChange={(event) => setSiteUrl(event.target.value)}
                 placeholder="https://erp.example.com"
-                className="w-full bg-white border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-400 shadow-sm"
+                className="w-full rounded-2xl border border-stone-200 bg-[#fbfaf6] px-4 py-3 text-sm text-stone-800 outline-none focus:border-[#2f6f5f] focus:bg-white"
                 required
               />
             </div>
@@ -364,7 +487,7 @@ export default function App() {
                 type="text"
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
-                className="w-full bg-white border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-400 shadow-sm"
+                className="w-full rounded-2xl border border-stone-200 bg-[#fbfaf6] px-4 py-3 text-sm text-stone-800 outline-none focus:border-[#2f6f5f] focus:bg-white"
                 required
               />
             </div>
@@ -377,7 +500,7 @@ export default function App() {
                 type="password"
                 value={apiSecret}
                 onChange={(event) => setApiSecret(event.target.value)}
-                className="w-full bg-white border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-400 shadow-sm"
+                className="w-full rounded-2xl border border-stone-200 bg-[#fbfaf6] px-4 py-3 text-sm text-stone-800 outline-none focus:border-[#2f6f5f] focus:bg-white"
                 required
               />
             </div>
@@ -392,7 +515,7 @@ export default function App() {
           <button
             type="submit"
             disabled={isLoggingIn}
-            className="mt-5 w-full py-3 bg-[#3ab175] hover:bg-[#319763] disabled:bg-gray-300 text-white text-base font-medium rounded shadow-sm transition-colors tracking-wide"
+            className="mt-5 w-full rounded-2xl bg-[#243c35] py-3 text-base font-semibold tracking-wide text-white shadow-sm transition-colors hover:bg-[#31564d] disabled:bg-stone-300"
           >
             {isLoggingIn ? "Logging in..." : "Login"}
           </button>
@@ -402,152 +525,162 @@ export default function App() {
   }
 
   return (
-    <div className="relative flex h-[700px] w-[550px] font-sans border border-gray-300 rounded-lg overflow-hidden bg-[#ededed] text-[#555555] shadow-2xl select-none">
-      {/* SIDEBAR */}
-      <div className="w-32 bg-white flex flex-col justify-between border-r border-gray-200 relative">
-        <div>
-          {/* Profile / Projects Navigation */}
-          <div
-            onClick={() => setCurrentView("projects")}
-            className={`p-4 flex flex-col items-center text-center cursor-pointer relative group ${currentView === "projects" ? "bg-gray-50" : ""}`}
-          >
-            {currentView === "projects" && (
-              <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#2da66a]" />
-            )}
-            <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-between overflow-hidden mb-1">
+    <div className="relative flex h-[700px] w-[550px] flex-col overflow-hidden rounded-[30px] border border-stone-200 bg-[#f8f4ea] font-sans text-stone-800 shadow-2xl select-none">
+      <div className="border-b border-stone-200 bg-[#263d35] px-5 pb-4 pt-5 text-white">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#f6d97a]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f6d97a]">
+                ERPNext Time
+              </span>
+            </div>
+            <h1 className="truncate text-xl font-semibold">
+              {loggedUser || "Workspace"}
+            </h1>
+            <p className="truncate text-xs text-white/60">{connectedSiteUrl}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.api.config.openWindow()}
+              className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 text-white hover:bg-white/15"
+              title="Configuration"
+            >
               <svg
-                className="w-full h-full text-gray-400 pt-2"
-                fill="currentColor"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
                 viewBox="0 0 24 24"
               >
-                <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                />
               </svg>
-            </div>
-            <span className="text-xs font-semibold text-gray-700 leading-tight">
-              {loggedUser || "ERPNext"}
-            </span>
-            <span className="text-[10px] text-gray-400 leading-tight break-all max-w-24">
-              {connectedSiteUrl}
-            </span>
-          </div>
-
-          {/* Manual Time Entry Navigation */}
-          <div
-            onClick={() => setCurrentView("manual")}
-            className={`p-4 flex flex-col items-center text-center cursor-pointer relative ${currentView === "manual" ? "bg-gray-50" : ""}`}
-          >
-            {currentView === "manual" && (
-              <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#2da66a]" />
-            )}
-            <svg
-              className={`w-7 h-7 mb-1 ${currentView === "manual" ? "text-[#2da66a]" : "text-gray-500"}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              viewBox="0 0 24 24"
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 text-white hover:bg-white/15"
+              title="Logout"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM9 2h6"
-              />
-            </svg>
-            <span className="text-[11px] font-medium text-gray-500 leading-tight">
-              Manual Time Entry
-            </span>
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
+                />
+              </svg>
+            </button>
           </div>
         </div>
 
-        {/* Sidebar Footer Icons */}
-        <div className="p-4 flex justify-around items-center border-t border-gray-100">
-          <button className="text-gray-500 hover:text-gray-700">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
+        <div className="grid grid-cols-4 gap-2 rounded-[20px] bg-black/15 p-1">
+          {[
+            ["projects", "Track"],
+            ["manual", "Manual"],
+            ["activities", "Queue"],
+            ["media", "Media"],
+          ].map(([view, label]) => (
+            <button
+              key={view}
+              onClick={() => setCurrentView(view as typeof currentView)}
+              className={`rounded-2xl px-2 py-2 text-xs font-semibold transition ${
+                currentView === view
+                  ? "bg-[#f8f4ea] text-[#243c35] shadow-sm"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4.5 12a7.5 7.5 0 0 0 15 0m-15 0a7.5 7.5 0 1 1 15 0m-15 0H3m16.5 0H21m-1.5 0H12m-8.457 3.077l1.41-.513m14.095-5.13l1.41-.513M5.106 17.785l1.15-.827m11.479-8.236l1.149-.827M8.14 21.27l.707-1.03m6.305-9.199l.708-1.03M12 3v1.5m0 15V21m-3.077-8.457l-.513-1.41m12.114 4.41l-.513-1.41"
-              />
-            </svg>
-          </button>
-          <button
-            onClick={handleLogout}
-            className="text-gray-500 hover:text-gray-700"
-            title="Logout"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
-              />
-            </svg>
-          </button>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* MAIN CONTENT WORKSPACE */}
-      <div className="flex-1 flex flex-col justify-between p-5 bg-[#f4f4f4]">
+      <div className="flex-1 overflow-hidden p-5">
         {/* VIEW 1: PROJECTS LIST */}
         {currentView === "projects" && (
-          <div className="flex flex-col h-full justify-between">
+          <div className="flex h-full flex-col justify-between">
             <div>
-              {/* Header */}
-              <div className="flex justify-between items-center mb-4">
-                <h1 className="text-xl font-normal text-gray-700">Projects</h1>
-                <div className="flex items-center space-x-3">
-                  <span className="text-xl font-normal text-gray-600">
-                    {formatDuration(elapsedSeconds)}
+              <div className="mb-4 rounded-[26px] bg-white p-4 shadow-[0_14px_45px_rgba(68,64,60,0.12)]">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">
+                      Current session
+                    </p>
+                    <h2 className="truncate text-lg font-semibold text-stone-900">
+                      {getSelectedProjectLabel() || "Choose a project"}
+                    </h2>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                      isTracking
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-stone-100 text-stone-500"
+                    }`}
+                  >
+                    {isTracking ? "Live" : "Ready"}
                   </span>
-                  <button className="w-7 h-7 bg-[#2da66a] text-white rounded-full flex items-center justify-center font-bold text-lg hover:bg-[#258a57] transition-colors">
-                    +
+                </div>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <span className="block font-mono text-4xl font-semibold tracking-normal text-[#243c35]">
+                    {formatDuration(elapsedSeconds)}
+                    </span>
+                    <span className="text-xs text-stone-400">
+                      tracked in this run
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleTrackingClick}
+                    disabled={!selectedProject}
+                    className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white shadow-sm transition ${
+                      isTracking
+                        ? "bg-[#b84c43] hover:bg-[#a1433b]"
+                        : "bg-[#243c35] hover:bg-[#31564d]"
+                    } disabled:bg-stone-300`}
+                  >
+                    {isTracking ? "Stop" : "Start"}
                   </button>
                 </div>
               </div>
 
-              {/* Filtering / Sort info */}
-              <div className="text-xs text-gray-500 mb-3 flex items-center cursor-pointer">
-                <span>Sort by Last Tracked (asc)</span>
-                <svg
-                  className="w-3 h-3 ml-1 text-gray-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-stone-700">
+                  Project board
+                </h2>
+                <span className="text-[11px] text-stone-400">
+                  {projects.length} items
+                </span>
               </div>
 
-              {/* Projects List Container */}
-              <div className="space-y-1.5 max-h-[440px] overflow-y-auto pr-1">
+              <div className="max-h-[315px] space-y-2 overflow-y-auto pr-1">
                 {isLoadingProjects && (
-                  <div className="bg-white border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-500 shadow-sm">
+                  <div className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-500">
                     Loading projects...
                   </div>
                 )}
 
                 {!isLoadingProjects && projectsError && (
-                  <div className="bg-white border border-red-100 rounded px-3 py-2.5 text-sm text-red-500 shadow-sm">
+                  <div className="rounded-2xl border border-red-100 bg-white px-3 py-3 text-sm text-red-500">
                     {projectsError}
                   </div>
                 )}
 
                 {!isLoadingProjects && !projectsError && projects.length === 0 && (
-                  <div className="bg-white border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-500 shadow-sm">
+                  <div className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-500">
                     No projects found.
                   </div>
                 )}
@@ -559,18 +692,24 @@ export default function App() {
                       setSelectedProject(project.name);
                       setProjectsError("");
                     }}
-                    className={`bg-white border rounded px-3 py-2.5 flex items-center justify-between shadow-sm transition-all cursor-pointer ${
+                    className={`flex cursor-pointer items-center justify-between rounded-[20px] border px-3 py-3 transition-all ${
                       selectedProject === project.name
-                        ? "border-[#2da66a] ring-1 ring-[#2da66a]/30"
-                        : "border-gray-200 hover:border-gray-300"
+                        ? "border-[#d5b95f] bg-[#fff8dc] shadow-sm"
+                        : "border-stone-200 bg-white hover:border-stone-300"
                     }`}
                   >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-4 h-4 rounded-full bg-gray-200 flex-shrink-0" />
-                      <span className="text-sm font-normal text-gray-600">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`h-9 w-2 flex-shrink-0 rounded-full ${
+                          selectedProject === project.name
+                            ? "bg-[#d5b95f]"
+                            : "bg-stone-200"
+                        }`}
+                      />
+                      <span className="truncate text-sm font-medium text-stone-700">
                         {project.project_name || project.name}
                         {project.owner === true && (
-                          <span className="text-xs text-gray-400 ml-1">
+                          <span className="ml-1 text-xs text-stone-400">
                             (Owner)
                           </span>
                         )}
@@ -579,13 +718,13 @@ export default function App() {
 
                     {/* List Row Action Icons */}
                     {project.icon === "menu" && (
-                      <div className="text-gray-400 font-bold tracking-tighter cursor-pointer px-1 hover:text-gray-600">
+                      <div className="cursor-pointer px-1 font-bold tracking-tighter text-stone-300 hover:text-stone-500">
                         •••
                       </div>
                     )}
                     {project.icon === "doc" && (
                       <svg
-                        className="w-4 h-4 text-gray-400"
+                        className="h-4 w-4 text-stone-300"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="2"
@@ -603,41 +742,267 @@ export default function App() {
               </div>
             </div>
 
-            {/* Bottom Actions Area */}
-            <div className="mt-4">
-              <div className="flex items-center space-x-1.5 text-xs text-gray-400 mb-3">
-                <span className="text-emerald-600 font-bold">✓</span>
-                <span>Tracked time synced</span>
+            <div className="mt-4 rounded-[22px] border border-stone-200 bg-white/70 px-4 py-3">
+              <div className="flex items-center justify-between text-xs text-stone-500">
+                <span>Sync state</span>
+                <span className="font-semibold text-[#2f6f5f]">Local queue ready</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentView === "activities" && (
+          <div className="flex h-full flex-col rounded-[26px] bg-white p-4 shadow-[0_14px_45px_rgba(68,64,60,0.10)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-semibold text-stone-900">
+                  Activity Queue
+                </h1>
+                <p className="text-xs text-stone-400">
+                  Unsynced local activity queue
+                </p>
               </div>
               <button
-                onClick={handleTrackingClick}
-                disabled={!selectedProject}
-                className={`w-full py-3.5 text-white text-base font-semibold rounded shadow-sm transition-colors tracking-wide ${
-                  isTracking
-                    ? "bg-red-400 hover:bg-red-500"
-                    : "bg-[#3ab175] hover:bg-[#319763]"
-                } disabled:bg-gray-300`}
+                onClick={refreshRecentActivities}
+                className="rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-2 text-sm font-medium text-stone-600 hover:border-stone-300"
               >
-                {isTracking ? "Stop Tracking" : "Start Tracking"}
+                Refresh
               </button>
+            </div>
+
+            <div className="space-y-2 overflow-y-auto pr-1">
+              {isLoadingActivities && (
+                <div className="rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-500">
+                  Loading activities...
+                </div>
+              )}
+
+              {!isLoadingActivities && activitiesError && (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-3 py-3 text-sm text-red-500">
+                  {activitiesError}
+                </div>
+              )}
+
+              {!isLoadingActivities &&
+                !activitiesError &&
+                recentSessions.length === 0 &&
+                recentActivities.length === 0 && (
+                  <div className="rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-500">
+                    No unsynced activities.
+                  </div>
+                )}
+
+              {!isLoadingActivities &&
+                !activitiesError &&
+                recentSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="rounded-[20px] border border-stone-200 bg-[#fbfaf6] px-3 py-3"
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-3">
+                      <span className="truncate text-sm font-semibold text-stone-800">
+                        {session.projectId}
+                      </span>
+                      <span
+                        className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize ${
+                          session.status === "active"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : session.status === "idle"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-stone-100 text-stone-600"
+                        }`}
+                      >
+                        {session.status}
+                      </span>
+                    </div>
+                    <p className="text-sm text-stone-600">
+                      {session.description}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-400">
+                      <span>{new Date(session.startTime).toLocaleString()}</span>
+                      {session.endTime && (
+                        <span>Ended {new Date(session.endTime).toLocaleString()}</span>
+                      )}
+                      <span>Duration: {formatDuration(session.duration)}</span>
+                      <span>Screenshots: {session.screenshotCount}</span>
+                      <span>Camshots: {session.camshotCount}</span>
+                      <span>Keys: {session.keyboardCount}</span>
+                      <span>Clicks: {session.mouseClickCount}</span>
+                    </div>
+                  </div>
+                ))}
+
+              {!isLoadingActivities &&
+                !activitiesError &&
+                recentActivities.map((activity) => (
+                  <div
+                    key={activity.id}
+                    className="rounded-[20px] border border-stone-200 bg-[#fbfaf6] px-3 py-3"
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-stone-800">
+                        {activity.project}
+                      </span>
+                      <span
+                        className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                          activity.type === "start"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        {activity.type === "start" ? "Started" : "Stopped"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-stone-600">
+                      {activity.description}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-400">
+                      <span>{new Date(activity.createdAt).toLocaleString()}</span>
+                      <span>Status: {activity.syncStatus}</span>
+                      {activity.screenshotPaths.length > 0 && (
+                        <span>
+                          Screenshots: {activity.screenshotPaths.length}
+                        </span>
+                      )}
+                      {activity.camshotPaths.length > 0 && (
+                        <span>Camshots: {activity.camshotPaths.length}</span>
+                      )}
+                    </div>
+                    {activity.uploadError && (
+                      <div className="mt-2 rounded bg-red-50 px-2 py-1 text-[11px] text-red-600">
+                        {activity.uploadError}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {currentView === "media" && (
+          <div className="flex h-full flex-col rounded-[26px] bg-white p-4 shadow-[0_14px_45px_rgba(68,64,60,0.10)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h1 className="text-xl font-semibold text-stone-900">
+                  Capture Gallery
+                </h1>
+                <p className="text-xs text-stone-400">
+                  Local captures and upload status
+                </p>
+              </div>
+              <button
+                onClick={refreshActivityMedia}
+                className="rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-2 text-sm font-medium text-stone-600 hover:border-stone-300"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="mb-3 flex rounded-2xl border border-stone-200 bg-[#fbfaf6] p-1">
+              {(["screenshot", "camshot", "all"] as ActivityMediaFilter[]).map(
+                (filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setMediaFilter(filter)}
+                    className={`flex-1 rounded-xl px-2 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                      mediaFilter === filter
+                        ? "bg-[#243c35] text-white"
+                        : "text-stone-500 hover:bg-white"
+                    }`}
+                  >
+                    {filter === "all" ? "All" : `${filter}s`}
+                  </button>
+                ),
+              )}
+            </div>
+
+            <div className="space-y-2 overflow-y-auto pr-1">
+              {isLoadingMedia && (
+                <div className="rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-500">
+                  Loading screenshots...
+                </div>
+              )}
+
+              {!isLoadingMedia && mediaError && (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-3 py-3 text-sm text-red-500">
+                  {mediaError}
+                </div>
+              )}
+
+              {!isLoadingMedia && !mediaError && activityMedia.length === 0 && (
+                <div className="rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-500">
+                  No captured media found.
+                </div>
+              )}
+
+              {!isLoadingMedia &&
+                !mediaError &&
+                activityMedia.map((media) => (
+                  <div
+                    key={media.id}
+                    className="overflow-hidden rounded-[22px] border border-stone-200 bg-[#fbfaf6]"
+                  >
+                    <div className="h-36 bg-stone-100">
+                      <img
+                        src={formatMediaFileUrl(media.filePath)}
+                        alt={`${media.mediaType} preview`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="space-y-2 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-semibold text-stone-800">
+                          {media.project || "Unknown project"}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-medium capitalize ${getMediaStatusClass(
+                            media.uploadStatus,
+                          )}`}
+                        >
+                          {media.uploadStatus}
+                        </span>
+                      </div>
+                      <p className="line-clamp-2 text-sm text-stone-600">
+                        {media.description || "No activity description"}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-400">
+                        <span className="capitalize">{media.mediaType}</span>
+                        <span>{new Date(media.createdAt).toLocaleString()}</span>
+                        {media.uploadedAt && (
+                          <span>
+                            Uploaded {new Date(media.uploadedAt).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-[11px] text-stone-400">
+                        {media.filePath}
+                      </div>
+                      {media.uploadError && (
+                        <div className="rounded bg-red-50 px-2 py-1 text-[11px] text-red-600">
+                          {media.uploadError}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         )}
 
         {/* VIEW 2: MANUAL TIME ENTRY FORM */}
         {currentView === "manual" && (
-          <div className="flex flex-col h-full justify-between">
+          <div className="flex h-full flex-col justify-between rounded-[26px] bg-white p-4 shadow-[0_14px_45px_rgba(68,64,60,0.10)]">
             <div className="space-y-3.5">
               <div>
-                <h1 className="text-xl font-normal text-gray-700">
+                <h1 className="text-xl font-semibold text-stone-900">
                   Manual Time Entry
                 </h1>
-                <p className="text-xs text-gray-400">All fields are required</p>
+                <p className="text-xs text-stone-400">All fields are required</p>
               </div>
 
               {/* Project Select Dropdown */}
               <div className="flex flex-col space-y-1">
-                <label className="text-xs text-gray-400 font-medium">
+                <label className="text-xs font-medium text-stone-400">
                   Project
                 </label>
                 <div className="relative">
@@ -645,7 +1010,7 @@ export default function App() {
                     value={selectedProject}
                     onChange={(e) => setSelectedProject(e.target.value)}
                     disabled={isLoadingProjects || projects.length === 0}
-                    className="w-full bg-white border-2 border-blue-400 rounded px-3 py-2 text-sm text-gray-700 outline-none appearance-none cursor-pointer shadow-sm"
+                    className="w-full cursor-pointer appearance-none rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-800 outline-none focus:border-[#2f6f5f]"
                   >
                     {projects.length === 0 && (
                       <option value="">No projects available</option>
@@ -657,7 +1022,7 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-stone-400">
                     <svg
                       className="w-4 h-4"
                       fill="currentColor"
@@ -675,37 +1040,37 @@ export default function App() {
 
               {/* Activity Description */}
               <div className="flex flex-col space-y-1">
-                <label className="text-xs text-gray-400 font-medium">
+                <label className="text-xs font-medium text-stone-400">
                   Activity Description
                 </label>
                 <textarea
                   placeholder="Briefly describe what you were working on..."
-                  className="w-full bg-white border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 outline-none focus:border-gray-400 h-20 resize-none shadow-inner placeholder-gray-300"
+                  className="h-20 w-full resize-none rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-800 outline-none placeholder-stone-300 focus:border-[#2f6f5f]"
                 />
               </div>
 
               {/* Start Date */}
               <div className="flex flex-col space-y-1">
-                <label className="text-xs text-gray-400 font-medium">
+                <label className="text-xs font-medium text-stone-400">
                   Start Date
                 </label>
                 <input
                   type="text"
                   defaultValue="May 18, 2026"
-                  className="w-3/5 bg-white border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 outline-none focus:border-gray-400 shadow-sm"
+                  className="w-3/5 rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-3 text-sm text-stone-800 outline-none focus:border-[#2f6f5f]"
                 />
               </div>
 
               {/* Duration and Time Splits */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col space-y-1">
-                  <label className="text-xs text-gray-400 font-medium">
+                  <label className="text-xs font-medium text-stone-400">
                     Duration HH:mm (Up to 24h)
                   </label>
                   <input
                     type="text"
                     defaultValue="01:00"
-                    className="w-24 bg-white border border-gray-300 rounded px-3 py-1.5 text-sm font-semibold text-gray-700 outline-none text-center shadow-sm"
+                    className="w-24 rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-2 text-center text-sm font-semibold text-stone-800 outline-none focus:border-[#2f6f5f]"
                   />
                 </div>
               </div>
@@ -713,32 +1078,32 @@ export default function App() {
               {/* Worked From / Worked To */}
               <div className="flex items-center space-x-3 pt-1">
                 <div className="flex flex-col space-y-1">
-                  <label className="text-xs text-gray-400 font-medium">
+                  <label className="text-xs font-medium text-stone-400">
                     Worked from
                   </label>
                   <input
                     type="text"
                     defaultValue="11:52 AM"
-                    className="w-28 bg-white border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-600 outline-none text-center shadow-sm"
+                    className="w-28 rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-2 text-center text-sm text-stone-700 outline-none focus:border-[#2f6f5f]"
                   />
                 </div>
-                <span className="text-gray-400 self-end mb-2.5">—</span>
+                <span className="mb-2.5 self-end text-stone-400">—</span>
                 <div className="flex flex-col space-y-1">
-                  <label className="text-xs text-gray-400 font-medium">
+                  <label className="text-xs font-medium text-stone-400">
                     Worked to
                   </label>
                   <input
                     type="text"
                     defaultValue="12:52 PM"
-                    className="w-28 bg-white border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-600 outline-none text-center shadow-sm"
+                    className="w-28 rounded-2xl border border-stone-200 bg-[#fbfaf6] px-3 py-2 text-center text-sm text-stone-700 outline-none focus:border-[#2f6f5f]"
                   />
                 </div>
               </div>
             </div>
 
             {/* Bottom Form Action Button */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <button className="w-full py-3 bg-[#3ab175] hover:bg-[#319763] text-white text-base font-medium rounded shadow-sm transition-colors tracking-wide">
+            <div className="mt-4 border-t border-stone-200 pt-4">
+              <button className="w-full rounded-2xl bg-[#243c35] py-3 text-base font-semibold tracking-wide text-white shadow-sm transition-colors hover:bg-[#31564d]">
                 Add Entry
               </button>
             </div>

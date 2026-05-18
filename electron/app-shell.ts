@@ -8,6 +8,7 @@ type AppShellOptions = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let configWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
 export function createWindow(options: AppShellOptions) {
@@ -72,6 +73,16 @@ export function createTray(dirname: string) {
       },
     },
     {
+      label: "Configuration",
+      click: () => {
+        openConfigurationWindow({
+          dirname,
+          isDev: process.env.NODE_ENV === "development",
+          viteDevServerUrl: process.env.VITE_DEV_SERVER_URL,
+        });
+      },
+    },
+    {
       type: "separator",
     },
     {
@@ -108,4 +119,45 @@ export function showOrCreateWindow(options: AppShellOptions) {
 
 export function getMainWindow() {
   return mainWindow;
+}
+
+export function openConfigurationWindow(options: AppShellOptions) {
+  if (configWindow && !configWindow.isDestroyed()) {
+    configWindow.show();
+    configWindow.focus();
+    return configWindow;
+  }
+
+  configWindow = new BrowserWindow({
+    width: 760,
+    height: 620,
+    minWidth: 720,
+    minHeight: 560,
+    title: "Configuration",
+    backgroundColor: "#f4f4f4",
+    webPreferences: {
+      preload: path.join(options.dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  if (options.isDev && options.viteDevServerUrl) {
+    const url = new URL(options.viteDevServerUrl);
+    url.searchParams.set("window", "config");
+    configWindow.loadURL(url.toString());
+  } else {
+    configWindow.loadFile(path.join(options.dirname, "../renderer/index.html"), {
+      query: {
+        window: "config",
+      },
+    });
+  }
+
+  configWindow.on("closed", () => {
+    configWindow = null;
+  });
+
+  return configWindow;
 }

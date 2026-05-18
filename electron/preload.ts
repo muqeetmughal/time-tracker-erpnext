@@ -84,6 +84,31 @@ contextBridge.exposeInMainWorld(
           'activities:prompt',
           payload
         ),
+
+      promptDescription: (payload: any) =>
+        ipcRenderer.invoke(
+          'activities:prompt-description',
+          payload
+        ),
+
+      listRecentUnsynced: (limit?: number) =>
+        ipcRenderer.invoke(
+          'activities:list-recent-unsynced',
+          limit
+        ),
+
+      listRecentSessions: (limit?: number) =>
+        ipcRenderer.invoke(
+          'activities:list-recent-sessions',
+          limit
+        ),
+
+      listMedia: (filter?: any, limit?: number) =>
+        ipcRenderer.invoke(
+          'activities:list-media',
+          filter,
+          limit
+        ),
     },
 
     settings: {
@@ -91,6 +116,45 @@ contextBridge.exposeInMainWorld(
         ipcRenderer.invoke(
           'settings:get'
         ),
+    },
+
+    config: {
+      openWindow: () =>
+        ipcRenderer.invoke(
+          'config:open-window'
+        ),
+
+      get: () =>
+        ipcRenderer.invoke(
+          'config:get'
+        ),
+
+      save: (payload: any) =>
+        ipcRenderer.invoke(
+          'config:save',
+          payload
+        ),
+
+      reset: () =>
+        ipcRenderer.invoke(
+          'config:reset'
+        ),
+
+      onUpdated: (callback: (config: any) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, config: any) =>
+          callback(config)
+
+        ipcRenderer.on(
+          'config:updated',
+          listener
+        )
+
+        return () =>
+          ipcRenderer.off(
+            'config:updated',
+            listener
+          )
+      },
     },
   }
 )

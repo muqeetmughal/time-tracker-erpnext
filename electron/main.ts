@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { bootstrapAppShell, showOrCreateWindow } from "./app-shell";
 import { registerIpcHandlers } from "./ipc";
+import { applyConfigSideEffects, getConfig } from "./store";
+import { activitySessionService } from "./tracker/activity-session-service";
 
 declare global {
   namespace Electron {
@@ -40,9 +42,10 @@ const appShellOptions = {
   viteDevServerUrl: VITE_DEV_SERVER_URL,
 };
 
-registerIpcHandlers();
+registerIpcHandlers(appShellOptions);
 
 app.whenReady().then(async () => {
+  applyConfigSideEffects(getConfig());
   bootstrapAppShell(appShellOptions);
 
   app.on("activate", () => {
@@ -53,5 +56,13 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
+  }
+});
+
+app.on("before-quit", () => {
+  if (activitySessionService.getActiveSession()) {
+    void activitySessionService.stop().catch((error) => {
+      console.error("Failed to stop active tracking session before quit:", error);
+    });
   }
 });
