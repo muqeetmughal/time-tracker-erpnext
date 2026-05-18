@@ -25,17 +25,59 @@ import { ipcRenderer, contextBridge } from 'electron'
 
 
 contextBridge.exposeInMainWorld(
-  'tracker',
+  'api',
   {
-    start: (payload: any) =>
-      ipcRenderer.invoke(
-        'tracker:start',
-        payload
-      ),
+    tracker: {
+      start: (payload: any) =>
+        ipcRenderer.invoke(
+          'tracker:start',
+          payload
+        ),
 
-    stop: () =>
-      ipcRenderer.invoke(
-        'tracker:stop'
-      ),
+      stop: () =>
+        ipcRenderer.invoke(
+          'tracker:stop'
+        ),
+    },
+
+    auth: {
+      get: () =>
+        ipcRenderer.invoke(
+          'auth:get'
+        ),
+
+      login: (payload: any) =>
+        ipcRenderer.invoke(
+          'auth:login',
+          payload
+        ),
+
+      logout: () =>
+        ipcRenderer.invoke(
+          'auth:logout'
+        ),
+    },
+
+    user: {
+      getLoggedUser: () =>
+        ipcRenderer.invoke(
+          'user:get-logged-user'
+        ),
+    },
+
+    projects: {
+      get: () =>
+        ipcRenderer.invoke(
+          'projects:get'
+        ),
+    },
+
+    activities: {
+      create: (payload: any) =>
+        ipcRenderer.invoke(
+          'activities:create',
+          payload
+        ),
+    },
   }
 )

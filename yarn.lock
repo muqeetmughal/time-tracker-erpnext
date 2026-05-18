@@ -902,6 +902,13 @@
   dependencies:
     "@types/node" "*"
 
+"@types/screenshot-desktop@^1.15.0":
+  version "1.15.0"
+  resolved "https://registry.yarnpkg.com/@types/screenshot-desktop/-/screenshot-desktop-1.15.0.tgz#5573496050bdf89bf70fd47f99e088d2cc889026"
+  integrity sha512-99wdiZ+nQVvG7d6ahy5PnNXjVyM832sI9KQBvAojFRjUKs7KZcyE/UssNFPpgsjonLcQHRzhsIhXDiJHQrqZaQ==
+  dependencies:
+    "@types/node" "*"
+
 "@types/verror@^1.10.3":
   version "1.10.11"
   resolved "https://registry.yarnpkg.com/@types/verror/-/verror-1.10.11.tgz#d3d6b418978c8aa202d41e5bb3483227b6ecc1bb"

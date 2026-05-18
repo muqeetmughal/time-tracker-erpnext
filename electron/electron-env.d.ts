@@ -11,7 +11,7 @@ declare namespace NodeJS {
      * │ │
      * │ ├─┬ dist-electron
      * │ │ ├── main.js
-     * │ │ └── preload.js
+     * │ │ └── preload.cjs
      * │
      * ```
      */
@@ -21,7 +21,57 @@ declare namespace NodeJS {
   }
 }
 
-// Used in Renderer process, expose in `preload.ts`
+type Project = {
+  name: string
+  project_name?: string
+  owner?: string | boolean
+  icon?: 'menu' | 'doc' | null
+  [key: string]: unknown
+}
+
+type LoginPayload = {
+  siteUrl: string
+  apiKey: string
+  apiSecret: string
+}
+
+type AuthState = {
+  loggedIn: boolean
+  siteUrl: string
+}
+
+type ActivityInput = {
+  project: string
+  type: 'start' | 'stop'
+  description: string
+  sessionId?: string
+  createdAt?: string
+}
+
+type ActivityRecord = Required<ActivityInput> & {
+  id: number
+}
+
+// Used in Renderer process, exposed in `preload.ts`
 interface Window {
-  ipcRenderer: import('electron').IpcRenderer
+  api: {
+    auth: {
+      get: () => Promise<AuthState>
+      login: (payload: LoginPayload) => Promise<{ success: boolean; siteUrl: string }>
+      logout: () => Promise<{ success: boolean }>
+    }
+    tracker: {
+      start: (payload: unknown) => Promise<unknown>
+      stop: () => Promise<unknown>
+    }
+    user: {
+      getLoggedUser: () => Promise<string>
+    }
+    projects: {
+      get: () => Promise<Project[]>
+    }
+    activities: {
+      create: (payload: ActivityInput) => Promise<ActivityRecord>
+    }
+  }
 }
