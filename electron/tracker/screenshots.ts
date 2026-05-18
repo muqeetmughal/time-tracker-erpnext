@@ -1,25 +1,17 @@
 import screenshot from 'screenshot-desktop'
 import path from 'path'
-import fs from 'fs'
+import os from 'node:os'
+import fs from 'node:fs/promises'
 import { getConfig } from '../store'
 import { reviewImageBeforeUpload } from './image-review'
 import type { AppConfig } from '../types'
+import { ensureCaptureDir } from './capture-storage'
 
 export type CapturedImage = {
   timestamp: string
   filePath: string
   approved: boolean
   rejected: boolean
-}
-
-function ensureScreenshotDir() {
-  const dir = path.join(process.cwd(), 'screenshots')
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-
-  return dir
 }
 
 async function reviewCapturedFile(filePath: string, config: AppConfig) {
@@ -33,43 +25,59 @@ async function reviewCapturedFile(filePath: string, config: AppConfig) {
   }
 }
 
+async function moveCaptureFile(from: string, to: string) {
+  try {
+    await fs.rename(from, to)
+  } catch {
+    await fs.copyFile(from, to)
+    await fs.unlink(from)
+  }
+}
+
+async function captureToAppStorage(
+  destinationDir: string,
+  destinationName: string,
+  screenId?: number,
+) {
+  const tempFile = path.join(os.tmpdir(), destinationName)
+  const destinationFile = path.join(destinationDir, destinationName)
+  const capturedFile = await screenshot({
+    filename: tempFile,
+    ...(screenId === undefined ? {} : { screen: screenId }),
+  })
+
+  await moveCaptureFile(capturedFile, destinationFile)
+
+  return destinationFile
+}
+
 export async function captureScreenshotsDetailed(config = getConfig()) {
   if (!config.general.takeScreenshots) {
     return []
   }
 
-  const dir = ensureScreenshotDir()
+  const dir = await ensureCaptureDir('screenshots')
   const timestamp = Date.now()
 
   if (config.trackingSources.screenshotsFrom === 'all') {
     const displays = await screenshot.listDisplays()
     const files = await Promise.all(
       displays.map(async (display, index) => {
-        const file = path.join(
+        return captureToAppStorage(
           dir,
-          `${timestamp}-${index}.jpg`
+          `${timestamp}-${index}.jpg`,
+          Number(display.id),
         )
-
-        await screenshot({
-          filename: file,
-          screen: display.id,
-        })
-
-        return file
       })
     )
 
     return Promise.all(files.map((file) => reviewCapturedFile(file, config)))
   }
 
-  const file = path.join(
+  const file = await captureToAppStorage(
     dir,
     `${timestamp}.jpg`
   )
-
-  await screenshot({
-    filename: file,
-  })
 
   return [await reviewCapturedFile(file, config)]
 }

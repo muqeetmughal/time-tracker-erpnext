@@ -8,6 +8,7 @@ import type {
   ActivityMediaType,
   ActivityMediaUploadStatus,
   ActivityRecord,
+  ActivityStatus,
   ActivitySessionMediaInput,
   ActivitySessionRecord,
   ActivitySessionSummaryRecord,
@@ -27,6 +28,10 @@ type ActivityRow = {
   description: string;
   session_id: string;
   created_at: string;
+  start_time: string;
+  end_time: string;
+  duration: number;
+  status: ActivityStatus;
   screenshot_paths: string;
   camshot_paths: string;
   synced: number;
@@ -50,6 +55,16 @@ type ActivityMediaRow = {
   project: string;
   activity_type: ActivityType;
   description: string;
+};
+
+type UploadedMediaFileRow = {
+  id: number;
+  file_path: string;
+};
+
+type ActiveActivityRow = {
+  id: number;
+  start_time: string;
 };
 
 type ActivitySessionRow = {
@@ -106,6 +121,7 @@ function migrateActivityMediaIfNeeded(database: Database) {
   const approved = columnSql(database, "activity_media", "approved", "1");
   const rejected = columnSql(database, "activity_media", "rejected", "0");
   const cameraId = columnSql(database, "activity_media", "camera_id", "''");
+  const fileDeleted = columnSql(database, "activity_media", "file_deleted", "0");
 
   database.exec("PRAGMA foreign_keys = OFF");
   database.exec(`
@@ -123,6 +139,7 @@ function migrateActivityMediaIfNeeded(database: Database) {
       approved INTEGER NOT NULL DEFAULT 1,
       rejected INTEGER NOT NULL DEFAULT 0,
       camera_id TEXT NOT NULL DEFAULT '',
+      file_deleted INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
       FOREIGN KEY(session_id) REFERENCES activity_sessions(id) ON DELETE CASCADE
@@ -140,6 +157,7 @@ function migrateActivityMediaIfNeeded(database: Database) {
       approved,
       rejected,
       camera_id,
+      file_deleted,
       created_at
     )
     SELECT
@@ -155,6 +173,7 @@ function migrateActivityMediaIfNeeded(database: Database) {
       ${approved},
       ${rejected},
       ${cameraId},
+      ${fileDeleted},
       created_at
     FROM activity_media_old;
     DROP TABLE activity_media_old;
@@ -182,6 +201,10 @@ function toActivityRecord(row: ActivityRow): ActivityRecord {
     description: row.description,
     sessionId: row.session_id,
     createdAt: row.created_at,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    duration: row.duration,
+    status: row.status,
     screenshotPaths: parseJsonArray(row.screenshot_paths),
     camshotPaths: parseJsonArray(row.camshot_paths),
     synced: row.synced === 1,
@@ -260,6 +283,10 @@ function getDb() {
   addColumnIfMissing(db, "activities", "uploaded_at TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, "activities", "synced_at TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, "activities", "upload_error TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(db, "activities", "start_time TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(db, "activities", "end_time TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(db, "activities", "duration INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "activities", "status TEXT NOT NULL DEFAULT 'completed'");
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_sessions (
       id TEXT PRIMARY KEY,
@@ -288,6 +315,7 @@ function getDb() {
       approved INTEGER NOT NULL DEFAULT 1,
       rejected INTEGER NOT NULL DEFAULT 0,
       camera_id TEXT NOT NULL DEFAULT '',
+      file_deleted INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
       FOREIGN KEY(session_id) REFERENCES activity_sessions(id) ON DELETE CASCADE
@@ -298,17 +326,21 @@ function getDb() {
   addColumnIfMissing(db, "activity_media", "approved INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "activity_media", "rejected INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "activity_media", "camera_id TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(db, "activity_media", "file_deleted INTEGER NOT NULL DEFAULT 0");
   db.exec(`
     CREATE TABLE IF NOT EXISTS input_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
+      activity_id INTEGER,
       kind TEXT NOT NULL CHECK (kind IN ('keyboard', 'mouse')),
       timestamp TEXT NOT NULL,
       count INTEGER NOT NULL,
       created_at TEXT NOT NULL,
+      FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE SET NULL,
       FOREIGN KEY(session_id) REFERENCES activity_sessions(id) ON DELETE CASCADE
     )
   `);
+  addColumnIfMissing(db, "input_activity", "activity_id INTEGER");
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_timeline (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -350,12 +382,16 @@ export function insertActivity(input: ActivityInput): ActivityRecord {
           description,
           session_id,
           created_at,
+          start_time,
+          end_time,
+          duration,
+          status,
           screenshot_paths,
           camshot_paths,
           synced,
           sync_status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'pending')
+        VALUES (?, ?, ?, ?, ?, ?, '', 0, 'completed', ?, ?, 0, 'pending')
       `,
     )
     .run(
@@ -364,6 +400,7 @@ export function insertActivity(input: ActivityInput): ActivityRecord {
       input.description,
       sessionId,
       createdAt,
+      input.createdAt || createdAt,
       JSON.stringify(screenshotPaths),
       JSON.stringify(camshotPaths),
     );
@@ -394,6 +431,10 @@ export function insertActivity(input: ActivityInput): ActivityRecord {
     description: input.description,
     sessionId,
     createdAt,
+    startTime: input.createdAt || createdAt,
+    endTime: "",
+    duration: 0,
+    status: "completed",
     screenshotPaths,
     camshotPaths,
     synced: false,
@@ -450,6 +491,93 @@ export function createActivitySession(input: {
     duration: 0,
     status: "active",
   };
+}
+
+export function createActivityRow(input: {
+  sessionId: string;
+  project: string;
+  description: string;
+  startTime: string;
+}) {
+  closeActiveActivityRow(input.sessionId, input.startTime);
+
+  const result = getDb()
+    .prepare(
+      `
+        INSERT INTO activities (
+          project,
+          type,
+          description,
+          session_id,
+          created_at,
+          start_time,
+          end_time,
+          duration,
+          status,
+          synced,
+          sync_status
+        )
+        VALUES (?, 'start', ?, ?, ?, ?, '', 0, 'active', 0, 'pending')
+      `,
+    )
+    .run(
+      input.project,
+      input.description,
+      input.sessionId,
+      input.startTime,
+      input.startTime,
+    );
+
+  return Number(result.lastInsertRowid);
+}
+
+export function closeActiveActivityRow(sessionId: string, endTime: string) {
+  const activeActivity = getActiveActivityRow(sessionId);
+
+  if (!activeActivity) {
+    return null;
+  }
+
+  const duration = Math.max(
+    0,
+    Math.floor(
+      (new Date(endTime).getTime() -
+        new Date(activeActivity.start_time).getTime()) /
+        1000,
+    ),
+  );
+
+  getDb()
+    .prepare(
+      `
+        UPDATE activities
+        SET end_time = ?,
+            duration = ?,
+            status = 'completed'
+        WHERE id = ?
+      `,
+    )
+    .run(endTime, duration, activeActivity.id);
+
+  return activeActivity.id;
+}
+
+export function getActiveActivityId(sessionId: string) {
+  return getActiveActivityRow(sessionId)?.id || null;
+}
+
+function getActiveActivityRow(sessionId: string) {
+  return getDb()
+    .prepare(
+      `
+        SELECT id, start_time
+        FROM activities
+        WHERE session_id = ? AND status = 'active'
+        ORDER BY start_time DESC
+        LIMIT 1
+      `,
+    )
+    .get(sessionId) as ActiveActivityRow | undefined;
 }
 
 export function updateActivitySessionStatus(
@@ -526,6 +654,7 @@ export function getActivitySession(sessionId: string) {
 }
 
 export function insertActivitySessionMedia(input: ActivitySessionMediaInput) {
+  const activityId = getActiveActivityId(input.sessionId);
   const result = getDb()
     .prepare(
       `
@@ -540,10 +669,11 @@ export function insertActivitySessionMedia(input: ActivitySessionMediaInput) {
           camera_id,
           created_at
         )
-        VALUES (NULL, ?, ?, ?, 'pending', ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
       `,
     )
     .run(
+      activityId,
       input.sessionId,
       input.mediaType,
       input.filePath,
@@ -586,21 +716,25 @@ export function insertInputActivity(input: InputActivityInput) {
     return;
   }
 
+  const activityId = input.activityId || getActiveActivityId(input.sessionId);
+
   getDb()
     .prepare(
       `
         INSERT INTO input_activity (
           session_id,
+          activity_id,
           kind,
           timestamp,
           count,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
     )
     .run(
       input.sessionId,
+      activityId,
       input.kind,
       input.timestamp,
       input.count,
@@ -662,6 +796,10 @@ export function listRecentUnsyncedActivities(limit = 50): ActivityRecord[] {
           description,
           session_id,
           created_at,
+          start_time,
+          end_time,
+          duration,
+          status,
           screenshot_paths,
           camshot_paths,
           synced,
@@ -765,4 +903,38 @@ export function listActivityMedia(
     .all(...params) as ActivityMediaRow[];
 
   return rows.map(toActivityMediaRecord);
+}
+
+export function listUploadedMediaFiles(limit = 100) {
+  const normalizedLimit = Math.min(Math.max(Math.floor(limit || 100), 1), 500);
+  const rows = getDb()
+    .prepare(
+      `
+        SELECT id, file_path
+        FROM activity_media
+        WHERE upload_status = 'uploaded'
+          AND file_deleted = 0
+          AND file_path != ''
+        ORDER BY uploaded_at ASC, created_at ASC
+        LIMIT ?
+      `,
+    )
+    .all(normalizedLimit) as UploadedMediaFileRow[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    filePath: row.file_path,
+  }));
+}
+
+export function markMediaFileDeleted(mediaId: number) {
+  getDb()
+    .prepare(
+      `
+        UPDATE activity_media
+        SET file_deleted = 1
+        WHERE id = ?
+      `,
+    )
+    .run(mediaId);
 }

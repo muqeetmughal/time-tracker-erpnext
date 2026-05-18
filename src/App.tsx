@@ -240,7 +240,22 @@ export default function App() {
     }
 
     const interval = window.setInterval(() => {
-      promptForActivity("start");
+      promptForActivity("start").then((description) => {
+        if (!description) {
+          return;
+        }
+
+        window.api.tracker
+          .updateActivity({ description })
+          .then(() => refreshRecentActivities())
+          .catch((error) => {
+            setProjectsError(
+              error instanceof Error
+                ? error.message
+                : "Could not update activity.",
+            );
+          });
+      });
     }, popupFrequencyMinutes * 60 * 1000);
 
     return () => {
@@ -456,6 +471,7 @@ export default function App() {
           return;
         }
 
+        await window.api.tracker.updateActivity({ description });
         await window.api.tracker.stop();
         setIsTracking(false);
         setSessionId("");
@@ -473,7 +489,7 @@ export default function App() {
 
   if (isCheckingAuth) {
     return (
-      <div className="flex h-[700px] w-[550px] items-center justify-center overflow-hidden rounded-[28px] border border-stone-200 bg-[#f8f4ea] font-sans text-stone-500 shadow-2xl select-none">
+      <div className="flex h-[700px] w-[550px] items-center justify-center overflow-hidden border border-stone-200 bg-[#f8f4ea] font-sans text-stone-500 shadow-2xl select-none">
         Checking login...
       </div>
     );
@@ -481,7 +497,7 @@ export default function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="flex h-[700px] w-[550px] items-center justify-center overflow-hidden rounded-[28px] border border-stone-200 bg-[#f8f4ea] p-6 font-sans text-stone-700 shadow-2xl select-none">
+      <div className="flex h-[700px] w-[550px] items-center justify-center overflow-hidden border border-stone-200 bg-[#f8f4ea] p-6 font-sans text-stone-700 shadow-2xl select-none">
         <form
           onSubmit={handleLogin}
           className="w-full rounded-[24px] border border-stone-200 bg-white/90 p-6 shadow-[0_18px_60px_rgba(68,64,60,0.18)]"

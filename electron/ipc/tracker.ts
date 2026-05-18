@@ -5,6 +5,8 @@ import type {
   TrackerStartResult,
   TrackerStatusResult,
   TrackerStopResult,
+  TrackerUpdateActivityPayload,
+  TrackerUpdateActivityResult,
 } from "../types";
 
 export function registerTrackerHandlers() {
@@ -22,4 +24,14 @@ export function registerTrackerHandlers() {
   ipcMain.handle("tracker:status", async (): Promise<TrackerStatusResult> => {
     return activitySessionService.getStatus();
   });
+
+  ipcMain.handle(
+    "tracker:update-activity",
+    async (
+      _,
+      payload: TrackerUpdateActivityPayload,
+    ): Promise<TrackerUpdateActivityResult> => {
+      return activitySessionService.updateActivity(payload);
+    },
+  );
 }

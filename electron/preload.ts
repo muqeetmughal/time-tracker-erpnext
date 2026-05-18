@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld(
         ipcRenderer.invoke(
           'tracker:status'
         ),
+
+      updateActivity: (payload: any) =>
+        ipcRenderer.invoke(
+          'tracker:update-activity',
+          payload
+        ),
     },
 
     auth: {

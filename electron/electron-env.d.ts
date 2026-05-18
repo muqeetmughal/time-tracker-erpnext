@@ -61,6 +61,10 @@ type ActivityRecord = {
   description: string
   sessionId: string
   createdAt: string
+  startTime: string
+  endTime: string
+  duration: number
+  status: 'active' | 'completed'
   screenshotPaths: string[]
   camshotPaths: string[]
   synced: boolean
@@ -167,6 +171,17 @@ type TrackerStartResult = {
   status: 'active' | 'idle' | 'stopped'
 }
 
+type TrackerUpdateActivityPayload = {
+  description: string
+}
+
+type TrackerUpdateActivityResult = {
+  success: boolean
+  activityId: number
+  description: string
+  startedAt: string
+}
+
 type TrackerStopResult = {
   success: boolean
   sessionId: string
@@ -197,6 +212,9 @@ interface Window {
       start: (payload: TrackerStartPayload) => Promise<TrackerStartResult>
       stop: () => Promise<TrackerStopResult>
       status: () => Promise<TrackerStatusResult>
+      updateActivity: (
+        payload: TrackerUpdateActivityPayload,
+      ) => Promise<TrackerUpdateActivityResult>
     }
     user: {
       getLoggedUser: () => Promise<string>

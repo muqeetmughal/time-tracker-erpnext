@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { insertActivitySessionMedia, insertActivityTimeline } from "../db";
 import type { AppConfig } from "../types";
+import { ensureCaptureDir } from "./capture-storage";
 import { reviewImageBeforeUpload } from "./image-review";
 import { getNextCaptureDelay } from "./timing";
 import type { UploadQueueService } from "./upload-queue-service";
@@ -104,8 +105,7 @@ async function captureCamshot(config: AppConfig): Promise<CamshotCapture | null>
     return null;
   }
 
-  const dir = path.join(process.cwd(), "camshots");
-  await fs.mkdir(dir, { recursive: true });
+  const dir = await ensureCaptureDir("camshots");
 
   const timestampMs = Date.now();
   const filePath = path.join(dir, `${timestampMs}.jpg`);

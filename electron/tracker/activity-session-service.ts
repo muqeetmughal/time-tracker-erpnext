@@ -1,4 +1,6 @@
 import {
+  closeActiveActivityRow,
+  createActivityRow,
   createActivitySession,
   insertActivityTimeline,
   stopActivitySession,
@@ -11,8 +13,11 @@ import type {
   TrackerStartResult,
   TrackerStatusResult,
   TrackerStopResult,
+  TrackerUpdateActivityPayload,
+  TrackerUpdateActivityResult,
 } from "../types";
 import { CamshotService } from "./camshot-service";
+import { cleanupUploadedCaptureFiles } from "./capture-storage";
 import { IdleDetectionService } from "./idle-detection-service";
 import { InputTrackingService } from "./input-tracking-service";
 import { ScreenshotService } from "./screenshot-service";
@@ -26,6 +31,7 @@ class ActivitySessionService {
   private inputTrackingService = new InputTrackingService();
   private idleDetectionService = new IdleDetectionService();
   private autosaveTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
   async start(payload: TrackerStartPayload): Promise<TrackerStartResult> {
     if (this.activeSession) {
@@ -52,6 +58,12 @@ class ActivitySessionService {
       description: payload.description,
       startTime: startedAt,
     });
+    createActivityRow({
+      sessionId,
+      project: payload.project,
+      description: payload.description,
+      startTime: startedAt,
+    });
     insertActivityTimeline({
       sessionId,
       type: "tracking_started",
@@ -73,6 +85,11 @@ class ActivitySessionService {
         );
       }
     }, 60_000);
+    this.cleanupTimer = setInterval(() => {
+      void cleanupUploadedCaptureFiles().catch((error) => {
+        console.warn("Uploaded media cleanup failed:", error);
+      });
+    }, 5 * 60_000);
 
     return {
       success: true,
@@ -90,6 +107,7 @@ class ActivitySessionService {
     const session = this.activeSession;
     const stoppedAt = new Date().toISOString();
 
+    closeActiveActivityRow(session.id, stoppedAt);
     this.screenshotService.stop();
     this.camshotService.stop();
     this.inputTrackingService.stop();
@@ -99,6 +117,13 @@ class ActivitySessionService {
       clearInterval(this.autosaveTimer);
       this.autosaveTimer = null;
     }
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    void cleanupUploadedCaptureFiles().catch((error) => {
+      console.warn("Uploaded media cleanup failed:", error);
+    });
 
     insertActivityTimeline({
       sessionId: session.id,
@@ -115,6 +140,40 @@ class ActivitySessionService {
       stoppedAt,
       durationSeconds: stoppedSession.duration,
       status: stoppedSession.status,
+    };
+  }
+
+  updateActivity(
+    payload: TrackerUpdateActivityPayload,
+  ): TrackerUpdateActivityResult {
+    if (!this.activeSession) {
+      throw new Error("No tracker session is currently running.");
+    }
+
+    const description = payload.description.trim();
+
+    if (!description) {
+      throw new Error("Activity description is required.");
+    }
+
+    const startedAt = new Date().toISOString();
+    const activityId = createActivityRow({
+      sessionId: this.activeSession.id,
+      project: this.activeSession.projectId,
+      description,
+      startTime: startedAt,
+    });
+
+    this.activeSession = {
+      ...this.activeSession,
+      description,
+    };
+
+    return {
+      success: true,
+      activityId,
+      description,
+      startedAt,
     };
   }
 

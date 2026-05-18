@@ -18,6 +18,7 @@ export type FrappeMethodResponse<T> = {
 };
 
 export type ActivityType = "start" | "stop";
+export type ActivityStatus = "active" | "completed";
 export type ActivityMediaType = "screenshot" | "camshot";
 export type ActivityMediaFilter = ActivityMediaType | "all";
 export type ActivityMediaUploadStatus = "pending" | "uploading" | "uploaded" | "failed";
@@ -47,6 +48,10 @@ export type ActivityRecord = {
   description: string;
   sessionId: string;
   createdAt: string;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  status: ActivityStatus;
   screenshotPaths: string[];
   camshotPaths: string[];
   synced: boolean;
@@ -112,6 +117,7 @@ export type InputActivityKind = "keyboard" | "mouse";
 
 export type InputActivityInput = {
   sessionId: string;
+  activityId?: number;
   kind: InputActivityKind;
   timestamp: string;
   count: number;
@@ -181,11 +187,22 @@ export type TrackerStartPayload = {
   description: string;
 };
 
+export type TrackerUpdateActivityPayload = {
+  description: string;
+};
+
 export type TrackerStartResult = {
   success: boolean;
   sessionId: string;
   startedAt: string;
   status: ActivitySessionStatus;
+};
+
+export type TrackerUpdateActivityResult = {
+  success: boolean;
+  activityId: number;
+  description: string;
+  startedAt: string;
 };
 
 export type TrackerStopResult = {
