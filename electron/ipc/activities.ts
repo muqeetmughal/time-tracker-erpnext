@@ -274,15 +274,15 @@ function openActivityDescriptionPrompt(input: ActivityPromptInput) {
     const promptId = `activity-description-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2)}`;
-    const parent = getMainWindow() || undefined;
     const promptWindow = new BrowserWindow({
       width: 420,
       height: 220,
-      parent,
-      modal: Boolean(parent),
+      center: true,
+      show: false,
       resizable: false,
       minimizable: false,
       maximizable: false,
+      alwaysOnTop: true,
       title: input.title,
       backgroundColor: "#f4f4f4",
       webPreferences: {
@@ -344,6 +344,10 @@ function openActivityDescriptionPrompt(input: ActivityPromptInput) {
         buildPromptHtml(promptId, input),
       )}`,
     );
+    promptWindow.once("ready-to-show", () => {
+      promptWindow.show();
+      promptWindow.focus();
+    });
   });
 }
 

@@ -13,7 +13,7 @@ import type {
 
 export const store = new Store<AppStore>();
 
-const minuteIntervals: MinuteInterval[] = [5, 10, 15, 30, 45, 60];
+const minuteIntervals: MinuteInterval[] = [1, 5, 10, 15, 30, 45, 60];
 const optionalMinuteIntervals: OptionalMinuteInterval[] = [
   ...minuteIntervals,
   null,

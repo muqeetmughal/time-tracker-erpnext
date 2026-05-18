@@ -135,7 +135,7 @@ export type AppSettings = {
   auto_submit_timesheet: boolean;
 };
 
-export type MinuteInterval = 5 | 10 | 15 | 30 | 45 | 60;
+export type MinuteInterval = 1 | 5 | 10 | 15 | 30 | 45 | 60;
 export type OptionalMinuteInterval = MinuteInterval | null;
 export type ScreenshotReviewSeconds = 5 | 10 | 15 | 30 | 60;
 export type ScreenshotsFrom = "primary" | "all";

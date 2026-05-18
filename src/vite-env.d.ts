@@ -93,7 +93,7 @@ type AppSettings = {
   auto_submit_timesheet: boolean;
 };
 
-type MinuteInterval = 5 | 10 | 15 | 30 | 45 | 60;
+type MinuteInterval = 1 | 5 | 10 | 15 | 30 | 45 | 60;
 type OptionalMinuteInterval = MinuteInterval | null;
 type ScreenshotReviewSeconds = 5 | 10 | 15 | 30 | 60;
 type ScreenshotsFrom = "primary" | "all";
