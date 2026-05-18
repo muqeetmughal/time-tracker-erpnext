@@ -1,1 +1,53 @@
-"use strict";const e=require("electron");e.contextBridge.exposeInMainWorld("api",{tracker:{start:r=>e.ipcRenderer.invoke("tracker:start",r),stop:()=>e.ipcRenderer.invoke("tracker:stop")},auth:{get:()=>e.ipcRenderer.invoke("auth:get"),login:r=>e.ipcRenderer.invoke("auth:login",r),logout:()=>e.ipcRenderer.invoke("auth:logout")},user:{getLoggedUser:()=>e.ipcRenderer.invoke("user:get-logged-user")},projects:{get:()=>e.ipcRenderer.invoke("projects:get")},activities:{create:r=>e.ipcRenderer.invoke("activities:create",r)}});
+"use strict";
+const electron = require("electron");
+electron.contextBridge.exposeInMainWorld(
+  "api",
+  {
+    tracker: {
+      start: (payload) => electron.ipcRenderer.invoke(
+        "tracker:start",
+        payload
+      ),
+      stop: () => electron.ipcRenderer.invoke(
+        "tracker:stop"
+      )
+    },
+    auth: {
+      get: () => electron.ipcRenderer.invoke(
+        "auth:get"
+      ),
+      login: (payload) => electron.ipcRenderer.invoke(
+        "auth:login",
+        payload
+      ),
+      logout: () => electron.ipcRenderer.invoke(
+        "auth:logout"
+      )
+    },
+    user: {
+      getLoggedUser: () => electron.ipcRenderer.invoke(
+        "user:get-logged-user"
+      )
+    },
+    projects: {
+      get: () => electron.ipcRenderer.invoke(
+        "projects:get"
+      )
+    },
+    activities: {
+      create: (payload) => electron.ipcRenderer.invoke(
+        "activities:create",
+        payload
+      ),
+      prompt: (payload) => electron.ipcRenderer.invoke(
+        "activities:prompt",
+        payload
+      )
+    },
+    settings: {
+      get: () => electron.ipcRenderer.invoke(
+        "settings:get"
+      )
+    }
+  }
+);

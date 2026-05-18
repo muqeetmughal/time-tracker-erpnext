@@ -52,6 +52,18 @@ type ActivityRecord = Required<ActivityInput> & {
   id: number
 }
 
+type ActivityPromptInput = Omit<ActivityInput, 'description'> & {
+  title: string
+  projectLabel?: string
+}
+
+type AppSettings = {
+  screenshot_frequency_seconds: number
+  idle_timeout_minutes: number
+  popup_frequency_minutes: number
+  auto_submit_timesheet: boolean
+}
+
 // Used in Renderer process, exposed in `preload.ts`
 interface Window {
   api: {
@@ -72,6 +84,10 @@ interface Window {
     }
     activities: {
       create: (payload: ActivityInput) => Promise<ActivityRecord>
+      prompt: (payload: ActivityPromptInput) => Promise<ActivityRecord | null>
+    }
+    settings: {
+      get: () => Promise<AppSettings>
     }
   }
 }

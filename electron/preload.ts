@@ -78,6 +78,19 @@ contextBridge.exposeInMainWorld(
           'activities:create',
           payload
         ),
+
+      prompt: (payload: any) =>
+        ipcRenderer.invoke(
+          'activities:prompt',
+          payload
+        ),
+    },
+
+    settings: {
+      get: () =>
+        ipcRenderer.invoke(
+          'settings:get'
+        ),
     },
   }
 )

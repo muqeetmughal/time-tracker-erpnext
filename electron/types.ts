@@ -29,3 +29,15 @@ export type ActivityInput = {
 export type ActivityRecord = Required<ActivityInput> & {
   id: number;
 };
+
+export type ActivityPromptInput = Omit<ActivityInput, "description"> & {
+  title: string;
+  projectLabel?: string;
+};
+
+export type AppSettings = {
+  screenshot_frequency_seconds: number;
+  idle_timeout_minutes: number;
+  popup_frequency_minutes: number;
+  auto_submit_timesheet: boolean;
+};

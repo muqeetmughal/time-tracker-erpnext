@@ -105,3 +105,7 @@ export function showOrCreateWindow(options: AppShellOptions) {
 
   mainWindow?.show();
 }
+
+export function getMainWindow() {
+  return mainWindow;
+}

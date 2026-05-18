@@ -1,6 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
-
-type ActivityPopupMode = "start" | "stop";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 export default function App() {
   const [currentView, setCurrentView] = useState("projects"); // 'projects' or 'manual'
@@ -19,11 +17,8 @@ export default function App() {
   const [projectsError, setProjectsError] = useState("");
   const [isTracking, setIsTracking] = useState(false);
   const [sessionId, setSessionId] = useState("");
-  const [activityPopupMode, setActivityPopupMode] =
-    useState<ActivityPopupMode | null>(null);
-  const [activityDescription, setActivityDescription] = useState("");
-  const [activityError, setActivityError] = useState("");
-  const [isSavingActivity, setIsSavingActivity] = useState(false);
+  const [popupFrequencyMinutes, setPopupFrequencyMinutes] = useState(30);
+  const isActivityPromptOpenRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -106,6 +101,46 @@ export default function App() {
 
     let isMounted = true;
 
+    async function fetchSettings() {
+      try {
+        const settings = await window.api.settings.get();
+
+        if (isMounted) {
+          setPopupFrequencyMinutes(settings.popup_frequency_minutes);
+        }
+      } catch (error) {
+        console.error("Failed to fetch settings:", error);
+      }
+    }
+
+    fetchSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!isTracking || popupFrequencyMinutes <= 0) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      promptForActivity("start");
+    }, popupFrequencyMinutes * 60 * 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isTracking, popupFrequencyMinutes, selectedProject, sessionId]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return;
+    }
+
+    let isMounted = true;
+
     async function fetchLoggedUser() {
       try {
         const user = await window.api.user.getLoggedUser();
@@ -167,75 +202,79 @@ export default function App() {
     setProjectsError("");
     setIsTracking(false);
     setSessionId("");
-    setActivityPopupMode(null);
   }
 
-  function openActivityPopup(mode: ActivityPopupMode) {
+  function getSelectedProjectLabel() {
+    return (
+      projects.find((project) => project.name === selectedProject)
+        ?.project_name || selectedProject
+    );
+  }
+
+  async function promptForActivity(type: "start" | "stop") {
+    if (!selectedProject) {
+      setProjectsError("Please select a project first.");
+      return null;
+    }
+
+    if (isActivityPromptOpenRef.current) {
+      return null;
+    }
+
+    try {
+      isActivityPromptOpenRef.current = true;
+
+      return await window.api.activities.prompt({
+        project: selectedProject,
+        projectLabel: getSelectedProjectLabel(),
+        type,
+        sessionId,
+        title:
+          type === "start"
+            ? "New Activity Description"
+            : "Completed Activity Description",
+      });
+    } finally {
+      isActivityPromptOpenRef.current = false;
+    }
+  }
+
+  async function handleTrackingClick() {
     if (!selectedProject) {
       setProjectsError("Please select a project first.");
       return;
     }
 
-    setActivityPopupMode(mode);
-    setActivityDescription("");
-    setActivityError("");
-  }
-
-  async function handleActivitySubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!activityPopupMode) {
-      return;
-    }
-
-    const description = activityDescription.trim();
-
-    if (!description) {
-      setActivityError("Activity description is required.");
-      return;
-    }
-
     try {
-      setIsSavingActivity(true);
-      setActivityError("");
+      if (!isTracking) {
+        const activity = await promptForActivity("start");
 
-      if (activityPopupMode === "start") {
+        if (!activity) {
+          return;
+        }
+
         const trackerResponse: any = await window.api.tracker.start({
           project: selectedProject,
-          description,
-        });
-        const nextSessionId = trackerResponse?.sessionId || "";
-
-        await window.api.activities.create({
-          project: selectedProject,
-          type: "start",
-          description,
-          sessionId: nextSessionId,
+          description: activity.description,
         });
 
-        setSessionId(nextSessionId);
+        setSessionId(trackerResponse?.sessionId || "");
         setIsTracking(true);
       } else {
-        await window.api.activities.create({
-          project: selectedProject,
-          type: "stop",
-          description,
-          sessionId,
-        });
+        const activity = await promptForActivity("stop");
+
+        if (!activity) {
+          return;
+        }
 
         await window.api.tracker.stop();
         setIsTracking(false);
         setSessionId("");
       }
-
-      setActivityPopupMode(null);
-      setActivityDescription("");
     } catch (error) {
-      setActivityError(
-        error instanceof Error ? error.message : "Could not save activity.",
+      setProjectsError(
+        error instanceof Error ? error.message : "Could not update tracking.",
       );
-    } finally {
-      setIsSavingActivity(false);
     }
   }
 
@@ -323,55 +362,6 @@ export default function App() {
 
   return (
     <div className="relative flex h-[700px] w-[550px] font-sans border border-gray-300 rounded-lg overflow-hidden bg-[#ededed] text-[#555555] shadow-2xl select-none">
-      {activityPopupMode && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 px-6">
-          <form
-            onSubmit={handleActivitySubmit}
-            className="w-full max-w-sm bg-white border border-gray-200 rounded p-4 shadow-xl"
-          >
-            <h2 className="text-lg font-medium text-gray-700">
-              {activityPopupMode === "start"
-                ? "New Activity Description"
-                : "Completed Activity Description"}
-            </h2>
-            <p className="mt-1 text-xs text-gray-400">
-              {projects.find((project) => project.name === selectedProject)
-                ?.project_name || selectedProject}
-            </p>
-            <input
-              autoFocus
-              value={activityDescription}
-              onChange={(event) => setActivityDescription(event.target.value)}
-              placeholder="What are you working on?"
-              className="mt-4 w-full bg-white border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-400 shadow-sm"
-            />
-
-            {activityError && (
-              <div className="mt-3 bg-red-50 border border-red-100 rounded px-3 py-2 text-sm text-red-600">
-                {activityError}
-              </div>
-            )}
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setActivityPopupMode(null)}
-                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSavingActivity}
-                className="px-4 py-2 bg-[#3ab175] hover:bg-[#319763] disabled:bg-gray-300 text-white text-sm font-medium rounded shadow-sm transition-colors"
-              >
-                {isSavingActivity ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* SIDEBAR */}
       <div className="w-32 bg-white flex flex-col justify-between border-r border-gray-200 relative">
         <div>
@@ -579,7 +569,7 @@ export default function App() {
                 <span>Tracked time synced</span>
               </div>
               <button
-                onClick={() => openActivityPopup(isTracking ? "stop" : "start")}
+                onClick={handleTrackingClick}
                 disabled={!selectedProject}
                 className={`w-full py-3.5 text-white text-base font-semibold rounded shadow-sm transition-colors tracking-wide ${
                   isTracking
