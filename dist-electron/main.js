@@ -132,7 +132,9 @@ function getDb() {
   if (db) {
     return db;
   }
-  db = new Database(path$1.join(app$1.getPath("userData"), "time-tracker.sqlite"));
+  const db_path = path$1.join(app$1.getPath("userData"), "time-tracker.sqlite");
+  console.log("Database path:", db_path);
+  db = new Database(db_path);
   db.exec(`
     CREATE TABLE IF NOT EXISTS activities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -843,7 +845,7 @@ if (!IS_WINDOWS) {
 if (IS_LINUX) {
   Signals.push("SIGIO", "SIGPOLL", "SIGPWR", "SIGSTKFLT");
 }
-class Interceptor {
+let Interceptor$1 = class Interceptor {
   /* CONSTRUCTOR */
   constructor() {
     this.callbacks = /* @__PURE__ */ new Set();
@@ -880,9 +882,9 @@ class Interceptor {
     };
     this.hook();
   }
-}
-const Interceptor$1 = new Interceptor();
-const whenExit = Interceptor$1.register;
+};
+const Interceptor2 = new Interceptor$1();
+const whenExit = Interceptor2.register;
 const Temp = {
   /* VARIABLES */
   store: {},
@@ -10165,7 +10167,7 @@ const ltr = ltr_1;
 const intersects = intersects_1;
 const simplifyRange = simplify;
 const subset = subset_1;
-var semver = {
+var semver$1 = {
   parse,
   valid,
   clean: clean$1,
@@ -10213,7 +10215,7 @@ var semver = {
   compareIdentifiers: identifiers.compareIdentifiers,
   rcompareIdentifiers: identifiers.rcompareIdentifiers
 };
-const semver$1 = /* @__PURE__ */ getDefaultExportFromCjs(semver);
+const semver = /* @__PURE__ */ getDefaultExportFromCjs(semver$1);
 const objectToString = Object.prototype.toString;
 const uint8ArrayStringified = "[object Uint8Array]";
 const arrayBufferStringified = "[object ArrayBuffer]";
@@ -10723,7 +10725,7 @@ class Conf {
         throw new Error(`Something went wrong during the migration! Changes applied to the store until this failed migration will be restored. ${errorMessage}`);
       }
     }
-    if (this._isVersionInRangeFormat(previousMigratedVersion) || !semver$1.eq(previousMigratedVersion, versionToMigrate)) {
+    if (this._isVersionInRangeFormat(previousMigratedVersion) || !semver.eq(previousMigratedVersion, versionToMigrate)) {
       this._set(MIGRATION_KEY, versionToMigrate);
     }
   }
@@ -10754,19 +10756,19 @@ class Conf {
     return candidate === INTERNAL_KEY || candidate.startsWith(`${INTERNAL_KEY}.`);
   }
   _isVersionInRangeFormat(version) {
-    return semver$1.clean(version) === null;
+    return semver.clean(version) === null;
   }
   _shouldPerformMigration(candidateVersion, previousMigratedVersion, versionToMigrate) {
     if (this._isVersionInRangeFormat(candidateVersion)) {
-      if (previousMigratedVersion !== "0.0.0" && semver$1.satisfies(previousMigratedVersion, candidateVersion)) {
+      if (previousMigratedVersion !== "0.0.0" && semver.satisfies(previousMigratedVersion, candidateVersion)) {
         return false;
       }
-      return semver$1.satisfies(versionToMigrate, candidateVersion);
+      return semver.satisfies(versionToMigrate, candidateVersion);
     }
-    if (semver$1.lte(candidateVersion, previousMigratedVersion)) {
+    if (semver.lte(candidateVersion, previousMigratedVersion)) {
       return false;
     }
-    if (semver$1.gt(candidateVersion, versionToMigrate)) {
+    if (semver.gt(candidateVersion, versionToMigrate)) {
       return false;
     }
     return true;
@@ -23799,9 +23801,9 @@ var asynckit = asynckit$1;
 var setToStringTag2 = esSetTostringtag;
 var hasOwn = hasown;
 var populate = populate$1;
-function FormData$1(options) {
-  if (!(this instanceof FormData$1)) {
-    return new FormData$1(options);
+function FormData$2(options) {
+  if (!(this instanceof FormData$2)) {
+    return new FormData$2(options);
   }
   this._overheadLength = 0;
   this._valueLength = 0;
@@ -23812,10 +23814,10 @@ function FormData$1(options) {
     this[option] = options[option];
   }
 }
-util.inherits(FormData$1, CombinedStream);
-FormData$1.LINE_BREAK = "\r\n";
-FormData$1.DEFAULT_CONTENT_TYPE = "application/octet-stream";
-FormData$1.prototype.append = function(field, value, options) {
+util.inherits(FormData$2, CombinedStream);
+FormData$2.LINE_BREAK = "\r\n";
+FormData$2.DEFAULT_CONTENT_TYPE = "application/octet-stream";
+FormData$2.prototype.append = function(field, value, options) {
   options = options || {};
   if (typeof options === "string") {
     options = { filename: options };
@@ -23835,7 +23837,7 @@ FormData$1.prototype.append = function(field, value, options) {
   append2(footer);
   this._trackLength(header, value, options);
 };
-FormData$1.prototype._trackLength = function(header, value, options) {
+FormData$2.prototype._trackLength = function(header, value, options) {
   var valueLength = 0;
   if (options.knownLength != null) {
     valueLength += Number(options.knownLength);
@@ -23845,7 +23847,7 @@ FormData$1.prototype._trackLength = function(header, value, options) {
     valueLength = Buffer.byteLength(value);
   }
   this._valueLength += valueLength;
-  this._overheadLength += Buffer.byteLength(header) + FormData$1.LINE_BREAK.length;
+  this._overheadLength += Buffer.byteLength(header) + FormData$2.LINE_BREAK.length;
   if (!value || !value.path && !(value.readable && hasOwn(value, "httpVersion")) && !(value instanceof Stream)) {
     return;
   }
@@ -23853,7 +23855,7 @@ FormData$1.prototype._trackLength = function(header, value, options) {
     this._valuesToMeasure.push(value);
   }
 };
-FormData$1.prototype._lengthRetriever = function(value, callback) {
+FormData$2.prototype._lengthRetriever = function(value, callback) {
   if (hasOwn(value, "fd")) {
     if (value.end != void 0 && value.end != Infinity && value.start != void 0) {
       callback(null, value.end + 1 - (value.start ? value.start : 0));
@@ -23879,7 +23881,7 @@ FormData$1.prototype._lengthRetriever = function(value, callback) {
     callback("Unknown stream");
   }
 };
-FormData$1.prototype._multiPartHeader = function(field, value, options) {
+FormData$2.prototype._multiPartHeader = function(field, value, options) {
   if (typeof options.header === "string") {
     return options.header;
   }
@@ -23906,13 +23908,13 @@ FormData$1.prototype._multiPartHeader = function(field, value, options) {
         header = [header];
       }
       if (header.length) {
-        contents += prop + ": " + header.join("; ") + FormData$1.LINE_BREAK;
+        contents += prop + ": " + header.join("; ") + FormData$2.LINE_BREAK;
       }
     }
   }
-  return "--" + this.getBoundary() + FormData$1.LINE_BREAK + contents + FormData$1.LINE_BREAK;
+  return "--" + this.getBoundary() + FormData$2.LINE_BREAK + contents + FormData$2.LINE_BREAK;
 };
-FormData$1.prototype._getContentDisposition = function(value, options) {
+FormData$2.prototype._getContentDisposition = function(value, options) {
   var filename;
   if (typeof options.filepath === "string") {
     filename = path.normalize(options.filepath).replace(/\\/g, "/");
@@ -23925,7 +23927,7 @@ FormData$1.prototype._getContentDisposition = function(value, options) {
     return 'filename="' + filename + '"';
   }
 };
-FormData$1.prototype._getContentType = function(value, options) {
+FormData$2.prototype._getContentType = function(value, options) {
   var contentType = options.contentType;
   if (!contentType && value && value.name) {
     contentType = mime.lookup(value.name);
@@ -23940,13 +23942,13 @@ FormData$1.prototype._getContentType = function(value, options) {
     contentType = mime.lookup(options.filepath || options.filename);
   }
   if (!contentType && value && typeof value === "object") {
-    contentType = FormData$1.DEFAULT_CONTENT_TYPE;
+    contentType = FormData$2.DEFAULT_CONTENT_TYPE;
   }
   return contentType;
 };
-FormData$1.prototype._multiPartFooter = function() {
+FormData$2.prototype._multiPartFooter = function() {
   return (function(next2) {
-    var footer = FormData$1.LINE_BREAK;
+    var footer = FormData$2.LINE_BREAK;
     var lastPart = this._streams.length === 0;
     if (lastPart) {
       footer += this._lastBoundary();
@@ -23954,10 +23956,10 @@ FormData$1.prototype._multiPartFooter = function() {
     next2(footer);
   }).bind(this);
 };
-FormData$1.prototype._lastBoundary = function() {
-  return "--" + this.getBoundary() + "--" + FormData$1.LINE_BREAK;
+FormData$2.prototype._lastBoundary = function() {
+  return "--" + this.getBoundary() + "--" + FormData$2.LINE_BREAK;
 };
-FormData$1.prototype.getHeaders = function(userHeaders) {
+FormData$2.prototype.getHeaders = function(userHeaders) {
   var header;
   var formHeaders = {
     "content-type": "multipart/form-data; boundary=" + this.getBoundary()
@@ -23969,19 +23971,19 @@ FormData$1.prototype.getHeaders = function(userHeaders) {
   }
   return formHeaders;
 };
-FormData$1.prototype.setBoundary = function(boundary) {
+FormData$2.prototype.setBoundary = function(boundary) {
   if (typeof boundary !== "string") {
     throw new TypeError("FormData boundary must be a string");
   }
   this._boundary = boundary;
 };
-FormData$1.prototype.getBoundary = function() {
+FormData$2.prototype.getBoundary = function() {
   if (!this._boundary) {
     this._generateBoundary();
   }
   return this._boundary;
 };
-FormData$1.prototype.getBuffer = function() {
+FormData$2.prototype.getBuffer = function() {
   var dataBuffer = new Buffer.alloc(0);
   var boundary = this.getBoundary();
   for (var i = 0, len = this._streams.length; i < len; i++) {
@@ -23992,16 +23994,16 @@ FormData$1.prototype.getBuffer = function() {
         dataBuffer = Buffer.concat([dataBuffer, Buffer.from(this._streams[i])]);
       }
       if (typeof this._streams[i] !== "string" || this._streams[i].substring(2, boundary.length + 2) !== boundary) {
-        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$1.LINE_BREAK)]);
+        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$2.LINE_BREAK)]);
       }
     }
   }
   return Buffer.concat([dataBuffer, Buffer.from(this._lastBoundary())]);
 };
-FormData$1.prototype._generateBoundary = function() {
+FormData$2.prototype._generateBoundary = function() {
   this._boundary = "--------------------------" + crypto.randomBytes(12).toString("hex");
 };
-FormData$1.prototype.getLengthSync = function() {
+FormData$2.prototype.getLengthSync = function() {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -24011,14 +24013,14 @@ FormData$1.prototype.getLengthSync = function() {
   }
   return knownLength;
 };
-FormData$1.prototype.hasKnownLength = function() {
+FormData$2.prototype.hasKnownLength = function() {
   var hasKnownLength = true;
   if (this._valuesToMeasure.length) {
     hasKnownLength = false;
   }
   return hasKnownLength;
 };
-FormData$1.prototype.getLength = function(cb) {
+FormData$2.prototype.getLength = function(cb) {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -24038,7 +24040,7 @@ FormData$1.prototype.getLength = function(cb) {
     cb(null, knownLength);
   });
 };
-FormData$1.prototype.submit = function(params, cb) {
+FormData$2.prototype.submit = function(params, cb) {
   var request;
   var options;
   var defaults2 = { method: "post" };
@@ -24085,19 +24087,19 @@ FormData$1.prototype.submit = function(params, cb) {
   }).bind(this));
   return request;
 };
-FormData$1.prototype._error = function(err) {
+FormData$2.prototype._error = function(err) {
   if (!this.error) {
     this.error = err;
     this.pause();
     this.emit("error", err);
   }
 };
-FormData$1.prototype.toString = function() {
+FormData$2.prototype.toString = function() {
   return "[object FormData]";
 };
-setToStringTag2(FormData$1.prototype, "FormData");
-var form_data = FormData$1;
-const FormData$2 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
+setToStringTag2(FormData$2.prototype, "FormData");
+var form_data = FormData$2;
+const FormData$1 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
 function isVisitable(thing) {
   return utils$1.isPlainObject(thing) || utils$1.isArray(thing);
 }
@@ -24121,7 +24123,7 @@ function toFormData$1(obj, formData, options) {
   if (!utils$1.isObject(obj)) {
     throw new TypeError("target must be an object");
   }
-  formData = formData || new (FormData$2 || FormData)();
+  formData = formData || new (FormData$1 || FormData)();
   options = utils$1.toFlatObject(
     options,
     {
@@ -24366,7 +24368,7 @@ const platform$1 = {
   isNode: true,
   classes: {
     URLSearchParams,
-    FormData: FormData$2,
+    FormData: FormData$1,
     Blob: typeof Blob !== "undefined" && Blob || null
   },
   ALPHABET,
@@ -29337,34 +29339,66 @@ function registerTaskHandlers() {
     }
   });
 }
+let activeSession = null;
 function registerTrackerHandlers() {
-  ipcMain$1.handle("tracker:start", async (_, payload) => {
-    try {
-      console.log("Tracker Start Payload:", payload);
+  ipcMain$1.handle(
+    "tracker:start",
+    async (_, payload) => {
+      if (activeSession) {
+        return {
+          success: true,
+          sessionId: activeSession.sessionId,
+          startedAt: activeSession.startedAt
+        };
+      }
+      if (!payload.project) {
+        throw new Error("Please select a project first.");
+      }
+      const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+      const sessionId = "session-" + Date.now();
+      activeSession = {
+        sessionId,
+        project: payload.project,
+        description: payload.description,
+        startedAt
+      };
+      console.log("Tracker Started:", activeSession);
       return {
         success: true,
-        sessionId: "session-" + Date.now()
-      };
-    } catch (error2) {
-      console.error(error2);
-      return {
-        success: false,
-        error: error2.message
+        sessionId,
+        startedAt
       };
     }
-  });
-  ipcMain$1.handle("tracker:stop", async (_, sessionId) => {
+  );
+  ipcMain$1.handle("tracker:stop", async () => {
     try {
-      console.log("Stopping Tracker:", sessionId);
+      if (!activeSession) {
+        throw new Error("No tracker session is currently running.");
+      }
+      const stoppedAt = (/* @__PURE__ */ new Date()).toISOString();
+      const durationSeconds = Math.max(
+        0,
+        Math.floor(
+          (new Date(stoppedAt).getTime() - new Date(activeSession.startedAt).getTime()) / 1e3
+        )
+      );
+      const stoppedSession = activeSession;
+      activeSession = null;
+      console.log("Tracker Stopped:", {
+        ...stoppedSession,
+        stoppedAt,
+        durationSeconds
+      });
       return {
-        success: true
+        success: true,
+        sessionId: stoppedSession.sessionId,
+        startedAt: stoppedSession.startedAt,
+        stoppedAt,
+        durationSeconds
       };
     } catch (error2) {
       console.error(error2);
-      return {
-        success: false,
-        error: error2.message
-      };
+      throw new Error(error2.message);
     }
   });
 }

@@ -41,3 +41,22 @@ export type AppSettings = {
   popup_frequency_minutes: number;
   auto_submit_timesheet: boolean;
 };
+
+export type TrackerStartPayload = {
+  project: string;
+  description: string;
+};
+
+export type TrackerStartResult = {
+  success: boolean;
+  sessionId: string;
+  startedAt: string;
+};
+
+export type TrackerStopResult = {
+  success: boolean;
+  sessionId: string;
+  startedAt: string;
+  stoppedAt: string;
+  durationSeconds: number;
+};

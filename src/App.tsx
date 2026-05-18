@@ -1,5 +1,15 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+function formatDuration(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return [hours, minutes, seconds]
+    .map((value) => value.toString().padStart(2, "0"))
+    .join(":");
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState("projects"); // 'projects' or 'manual'
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -17,6 +27,8 @@ export default function App() {
   const [projectsError, setProjectsError] = useState("");
   const [isTracking, setIsTracking] = useState(false);
   const [sessionId, setSessionId] = useState("");
+  const [startedAt, setStartedAt] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [popupFrequencyMinutes, setPopupFrequencyMinutes] = useState(30);
   const isActivityPromptOpenRef = useRef(false);
 
@@ -135,6 +147,30 @@ export default function App() {
   }, [isTracking, popupFrequencyMinutes, selectedProject, sessionId]);
 
   useEffect(() => {
+    if (!isTracking || !startedAt) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    function updateElapsedSeconds() {
+      setElapsedSeconds(
+        Math.max(
+          0,
+          Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000),
+        ),
+      );
+    }
+
+    updateElapsedSeconds();
+
+    const interval = window.setInterval(updateElapsedSeconds, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isTracking, startedAt]);
+
+  useEffect(() => {
     if (!isLoggedIn) {
       return;
     }
@@ -202,6 +238,8 @@ export default function App() {
     setProjectsError("");
     setIsTracking(false);
     setSessionId("");
+    setStartedAt("");
+    setElapsedSeconds(0);
   }
 
   function getSelectedProjectLabel() {
@@ -253,12 +291,13 @@ export default function App() {
           return;
         }
 
-        const trackerResponse: any = await window.api.tracker.start({
+        const trackerResponse = await window.api.tracker.start({
           project: selectedProject,
           description: activity.description,
         });
 
-        setSessionId(trackerResponse?.sessionId || "");
+        setSessionId(trackerResponse.sessionId);
+        setStartedAt(trackerResponse.startedAt);
         setIsTracking(true);
       } else {
         const activity = await promptForActivity("stop");
@@ -270,6 +309,8 @@ export default function App() {
         await window.api.tracker.stop();
         setIsTracking(false);
         setSessionId("");
+        setStartedAt("");
+        setElapsedSeconds(0);
       }
     } catch (error) {
       setProjectsError(
@@ -467,7 +508,7 @@ export default function App() {
                 <h1 className="text-xl font-normal text-gray-700">Projects</h1>
                 <div className="flex items-center space-x-3">
                   <span className="text-xl font-normal text-gray-600">
-                    21:44
+                    {formatDuration(elapsedSeconds)}
                   </span>
                   <button className="w-7 h-7 bg-[#2da66a] text-white rounded-full flex items-center justify-center font-bold text-lg hover:bg-[#258a57] transition-colors">
                     +

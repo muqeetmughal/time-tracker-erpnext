@@ -64,6 +64,25 @@ type AppSettings = {
   auto_submit_timesheet: boolean
 }
 
+type TrackerStartPayload = {
+  project: string
+  description: string
+}
+
+type TrackerStartResult = {
+  success: boolean
+  sessionId: string
+  startedAt: string
+}
+
+type TrackerStopResult = {
+  success: boolean
+  sessionId: string
+  startedAt: string
+  stoppedAt: string
+  durationSeconds: number
+}
+
 // Used in Renderer process, exposed in `preload.ts`
 interface Window {
   api: {
@@ -73,8 +92,8 @@ interface Window {
       logout: () => Promise<{ success: boolean }>
     }
     tracker: {
-      start: (payload: unknown) => Promise<unknown>
-      stop: () => Promise<unknown>
+      start: (payload: TrackerStartPayload) => Promise<TrackerStartResult>
+      stop: () => Promise<TrackerStopResult>
     }
     user: {
       getLoggedUser: () => Promise<string>

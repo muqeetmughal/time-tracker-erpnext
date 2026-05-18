@@ -1,9 +1,46 @@
 import { ipcMain } from "electron";
+import type {
+  TrackerStartPayload,
+  TrackerStartResult,
+  TrackerStopResult,
+} from "../types";
+
+type ActiveSession = {
+  sessionId: string;
+  project: string;
+  description: string;
+  startedAt: string;
+};
+
+let activeSession: ActiveSession | null = null;
 
 export function registerTrackerHandlers() {
-  ipcMain.handle("tracker:start", async (_, payload) => {
-    try {
-      console.log("Tracker Start Payload:", payload);
+  ipcMain.handle(
+    "tracker:start",
+    async (_, payload: TrackerStartPayload): Promise<TrackerStartResult> => {
+      if (activeSession) {
+        return {
+          success: true,
+          sessionId: activeSession.sessionId,
+          startedAt: activeSession.startedAt,
+        };
+      }
+
+      if (!payload.project) {
+        throw new Error("Please select a project first.");
+      }
+
+      const startedAt = new Date().toISOString();
+      const sessionId = "session-" + Date.now();
+
+      activeSession = {
+        sessionId,
+        project: payload.project,
+        description: payload.description,
+        startedAt,
+      };
+
+      console.log("Tracker Started:", activeSession);
 
       /**
        * TODO:
@@ -16,21 +53,36 @@ export function registerTrackerHandlers() {
 
       return {
         success: true,
-        sessionId: "session-" + Date.now(),
+        sessionId,
+        startedAt,
       };
-    } catch (error: any) {
-      console.error(error);
+    },
+  );
 
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  });
-
-  ipcMain.handle("tracker:stop", async (_, sessionId) => {
+  ipcMain.handle("tracker:stop", async (): Promise<TrackerStopResult> => {
     try {
-      console.log("Stopping Tracker:", sessionId);
+      if (!activeSession) {
+        throw new Error("No tracker session is currently running.");
+      }
+
+      const stoppedAt = new Date().toISOString();
+      const durationSeconds = Math.max(
+        0,
+        Math.floor(
+          (new Date(stoppedAt).getTime() -
+            new Date(activeSession.startedAt).getTime()) /
+            1000,
+        ),
+      );
+
+      const stoppedSession = activeSession;
+      activeSession = null;
+
+      console.log("Tracker Stopped:", {
+        ...stoppedSession,
+        stoppedAt,
+        durationSeconds,
+      });
 
       /**
        * TODO:
@@ -43,14 +95,15 @@ export function registerTrackerHandlers() {
 
       return {
         success: true,
+        sessionId: stoppedSession.sessionId,
+        startedAt: stoppedSession.startedAt,
+        stoppedAt,
+        durationSeconds,
       };
     } catch (error: any) {
       console.error(error);
 
-      return {
-        success: false,
-        error: error.message,
-      };
+      throw new Error(error.message);
     }
   });
 }

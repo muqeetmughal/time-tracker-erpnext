@@ -9,8 +9,9 @@ function getDb() {
   if (db) {
     return db;
   }
-
-  db = new Database(path.join(app.getPath("userData"), "time-tracker.sqlite"));
+  const db_path =path.join(app.getPath("userData"), "time-tracker.sqlite")
+  console.log("Database path:", db_path);
+  db = new Database(db_path);
   db.exec(`
     CREATE TABLE IF NOT EXISTS activities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
