@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld(
         ipcRenderer.invoke(
           'tracker:stop'
         ),
+
+      status: () =>
+        ipcRenderer.invoke(
+          'tracker:status'
+        ),
     },
 
     auth: {

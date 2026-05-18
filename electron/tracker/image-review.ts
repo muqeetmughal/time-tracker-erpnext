@@ -1,6 +1,14 @@
 import { BrowserWindow, ipcMain, screen } from "electron";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { AppConfig } from "../types";
+
+const imageMimeTypes: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
 
 function escapeHtml(value: string) {
   return value
@@ -11,12 +19,21 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#039;");
 }
 
-export function reviewImageBeforeUpload(
+export async function reviewImageBeforeUpload(
   imagePath: string,
   config: AppConfig,
 ): Promise<boolean> {
   if (!config.general.reviewImagesBeforeUpload) {
-    return Promise.resolve(true);
+    return true;
+  }
+
+  let imageDataUrl = "";
+
+  try {
+    imageDataUrl = await getImageDataUrl(imagePath);
+  } catch (error) {
+    console.warn("Unable to load image preview for review:", error);
+    return true;
   }
 
   return new Promise((resolve) => {
@@ -135,7 +152,7 @@ export function reviewImageBeforeUpload(
           <body>
             <div class="wrap">
               <h1>Review Image Before Upload</h1>
-              <img src="file://${escapeHtml(path.resolve(imagePath))}" />
+              <img src="${escapeHtml(imageDataUrl)}" />
               <div class="actions">
                 <button id="reject">Reject</button>
                 <button class="allow" id="allow">Allow</button>
@@ -156,4 +173,12 @@ export function reviewImageBeforeUpload(
       `)}`,
     );
   });
+}
+
+async function getImageDataUrl(imagePath: string) {
+  const extension = path.extname(imagePath).toLowerCase();
+  const mimeType = imageMimeTypes[extension] || "image/jpeg";
+  const image = await fs.readFile(path.resolve(imagePath));
+
+  return `data:${mimeType};base64,${image.toString("base64")}`;
 }

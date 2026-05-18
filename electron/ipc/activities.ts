@@ -1,4 +1,6 @@
 import { BrowserWindow, ipcMain } from "electron";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { getMainWindow } from "../app-shell";
 import {
   insertActivity,
@@ -10,9 +12,36 @@ import { captureScreenshot } from "../tracker/screenshots";
 import type {
   ActivityInput,
   ActivityMediaFilter,
+  ActivityMediaRecord,
   ActivityPromptInput,
   ActivityRecord,
 } from "../types";
+
+const imageMimeTypes: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
+async function attachMediaPreviews(records: ActivityMediaRecord[]) {
+  return Promise.all(
+    records.map(async (record) => {
+      try {
+        const extension = path.extname(record.filePath).toLowerCase();
+        const mimeType = imageMimeTypes[extension] || "image/jpeg";
+        const image = await fs.readFile(record.filePath);
+
+        return {
+          ...record,
+          previewDataUrl: `data:${mimeType};base64,${image.toString("base64")}`,
+        };
+      } catch {
+        return record;
+      }
+    }),
+  );
+}
 
 async function createActivity(input: ActivityInput) {
   const description = input.description.trim();
@@ -334,7 +363,7 @@ export function registerActivityHandlers() {
   ipcMain.handle(
     "activities:list-media",
     async (_, filter?: ActivityMediaFilter, limit?: number) => {
-      return listActivityMedia(filter, limit);
+      return attachMediaPreviews(listActivityMedia(filter, limit));
     },
   );
 

@@ -62,6 +62,7 @@ export type ActivityMediaRecord = {
   activityId: number;
   mediaType: ActivityMediaType;
   filePath: string;
+  previewDataUrl?: string;
   uploadStatus: ActivityMediaUploadStatus;
   remoteId: string;
   uploadedAt: string;
@@ -194,4 +195,13 @@ export type TrackerStopResult = {
   stoppedAt: string;
   durationSeconds: number;
   status: ActivitySessionStatus;
+};
+
+export type TrackerStatusResult = {
+  isTracking: boolean;
+  sessionId: string;
+  project: string;
+  description: string;
+  startedAt: string;
+  status: ActivitySessionStatus | "";
 };

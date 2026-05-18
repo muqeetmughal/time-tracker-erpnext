@@ -76,6 +76,7 @@ type ActivityMediaRecord = {
   activityId: number
   mediaType: ActivityMediaType
   filePath: string
+  previewDataUrl?: string
   uploadStatus: ActivityMediaUploadStatus
   remoteId: string
   uploadedAt: string
@@ -175,6 +176,15 @@ type TrackerStopResult = {
   status: 'active' | 'idle' | 'stopped'
 }
 
+type TrackerStatusResult = {
+  isTracking: boolean
+  sessionId: string
+  project: string
+  description: string
+  startedAt: string
+  status: 'active' | 'idle' | 'stopped' | ''
+}
+
 // Used in Renderer process, exposed in `preload.ts`
 interface Window {
   api: {
@@ -186,6 +196,7 @@ interface Window {
     tracker: {
       start: (payload: TrackerStartPayload) => Promise<TrackerStartResult>
       stop: () => Promise<TrackerStopResult>
+      status: () => Promise<TrackerStatusResult>
     }
     user: {
       getLoggedUser: () => Promise<string>

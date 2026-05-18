@@ -3,6 +3,7 @@ import { activitySessionService } from "../tracker/activity-session-service";
 import type {
   TrackerStartPayload,
   TrackerStartResult,
+  TrackerStatusResult,
   TrackerStopResult,
 } from "../types";
 
@@ -16,5 +17,9 @@ export function registerTrackerHandlers() {
 
   ipcMain.handle("tracker:stop", async (): Promise<TrackerStopResult> => {
     return activitySessionService.stop();
+  });
+
+  ipcMain.handle("tracker:status", async (): Promise<TrackerStatusResult> => {
+    return activitySessionService.getStatus();
   });
 }

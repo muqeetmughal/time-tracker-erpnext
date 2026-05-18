@@ -9,6 +9,7 @@ import type {
   ActivitySessionRecord,
   TrackerStartPayload,
   TrackerStartResult,
+  TrackerStatusResult,
   TrackerStopResult,
 } from "../types";
 import { CamshotService } from "./camshot-service";
@@ -119,6 +120,28 @@ class ActivitySessionService {
 
   getActiveSession() {
     return this.activeSession;
+  }
+
+  getStatus(): TrackerStatusResult {
+    if (!this.activeSession) {
+      return {
+        isTracking: false,
+        sessionId: "",
+        project: "",
+        description: "",
+        startedAt: "",
+        status: "",
+      };
+    }
+
+    return {
+      isTracking: true,
+      sessionId: this.activeSession.id,
+      project: this.activeSession.projectId,
+      description: this.activeSession.description,
+      startedAt: this.activeSession.startTime,
+      status: this.activeSession.status,
+    };
   }
 
   private pauseForIdle() {

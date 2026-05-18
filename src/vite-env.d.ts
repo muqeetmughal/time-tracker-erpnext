@@ -55,6 +55,7 @@ type ActivityMediaRecord = {
   activityId: number;
   mediaType: ActivityMediaType;
   filePath: string;
+  previewDataUrl?: string;
   uploadStatus: ActivityMediaUploadStatus;
   remoteId: string;
   uploadedAt: string;
@@ -154,6 +155,15 @@ type TrackerStopResult = {
   status: "active" | "idle" | "stopped";
 };
 
+type TrackerStatusResult = {
+  isTracking: boolean;
+  sessionId: string;
+  project: string;
+  description: string;
+  startedAt: string;
+  status: "active" | "idle" | "stopped" | "";
+};
+
 interface Window {
   api: {
     auth: {
@@ -164,6 +174,7 @@ interface Window {
     tracker: {
       start: (payload: TrackerStartPayload) => Promise<TrackerStartResult>;
       stop: () => Promise<TrackerStopResult>;
+      status: () => Promise<TrackerStatusResult>;
     };
     user: {
       getLoggedUser: () => Promise<string>;

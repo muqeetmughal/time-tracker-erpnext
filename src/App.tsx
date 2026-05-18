@@ -148,6 +148,40 @@ export default function App() {
   }, [isLoggedIn]);
 
   useEffect(() => {
+    if (!isLoggedIn) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function hydrateTrackerStatus() {
+      try {
+        const trackerStatus = await window.api.tracker.status();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setIsTracking(trackerStatus.isTracking);
+        setSessionId(trackerStatus.sessionId);
+        setStartedAt(trackerStatus.startedAt);
+
+        if (trackerStatus.project) {
+          setSelectedProject(trackerStatus.project);
+        }
+      } catch (error) {
+        console.error("Failed to hydrate tracker status:", error);
+      }
+    }
+
+    hydrateTrackerStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
     if (!isLoggedIn || currentView !== "activities") {
       return;
     }
@@ -944,7 +978,10 @@ export default function App() {
                   >
                     <div className="h-36 bg-stone-100">
                       <img
-                        src={formatMediaFileUrl(media.filePath)}
+                        src={
+                          media.previewDataUrl ||
+                          formatMediaFileUrl(media.filePath)
+                        }
                         alt={`${media.mediaType} preview`}
                         className="h-full w-full object-cover"
                       />
